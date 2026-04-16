@@ -118,6 +118,7 @@ export interface MiniPlayAPI {
   assetsAdd: (payload: { dirPath: string; fileName: string; fileBase64: string; fileMimeType: string }) => Promise<{ success: boolean; error?: string }>;
   assetsReplace: (payload: { targetPath: string; newFileBase64: string; newFileName: string; newFileMimeType: string }) => Promise<{ success: boolean; error?: string }>;
   assetsDelete: (payload: { filePath: string }) => Promise<{ success: boolean; error?: string }>;
+  assetsRead: (payload: { filePath: string }) => Promise<{ base64?: string; mimeType?: string; error?: string }>;
 
   // Git / Time Travel
   gitVersions: (projectPath?: string) => Promise<{ versions: unknown[] }>;
@@ -196,6 +197,7 @@ const api: MiniPlayAPI = {
   assetsAdd: (payload: { dirPath: string; fileName: string; fileBase64: string; fileMimeType: string }) => ipcRenderer.invoke('assets:add', payload),
   assetsReplace: (payload: { targetPath: string; newFileBase64: string; newFileName: string; newFileMimeType: string }) => ipcRenderer.invoke('assets:replace', payload),
   assetsDelete: (payload: { filePath: string }) => ipcRenderer.invoke('assets:delete', payload),
+  assetsRead: (payload: { filePath: string }) => ipcRenderer.invoke('assets:read', payload),
 
   gitVersions: (projectPath?: string) => ipcRenderer.invoke('git:versions', projectPath),
   gitCommit: (payload: { summary: string; changedFiles?: string[]; triggerMessageId?: string }) =>

@@ -70,7 +70,7 @@ export function GddEditor() {
   return (
     <div className="h-full flex flex-col">
       {/* Toolbar */}
-      <div className="flex items-center justify-between px-3 py-1.5 border-b border-slate-200 bg-slate-50/50">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-slate-200 bg-slate-50/50">
         <span className="text-[11px] text-slate-400 font-medium">docs/GDD.md</span>
         <div className="flex items-center gap-2">
           {dirty && (

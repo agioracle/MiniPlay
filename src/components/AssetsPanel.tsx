@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { ChevronRight, ChevronDown, Image, Volume2, File, RefreshCw, Plus, Replace, Trash2 } from 'lucide-react'
+import { ChevronRight, ChevronDown, Image, Volume2, File, RefreshCw, Plus, Replace, Trash2, X } from 'lucide-react'
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                             */
@@ -101,9 +101,11 @@ interface TreeNodeProps {
   setDraggedFile: (path: string | null) => void
   deleteConfirm: string | null
   setDeleteConfirm: (path: string | null) => void
+  selectedFile: string | null
+  onSelect: (node: AssetNode | null) => void
 }
 
-function TreeNode({ node, depth, onRefresh, onError, draggedFile, setDraggedFile, deleteConfirm, setDeleteConfirm }: TreeNodeProps) {
+function TreeNode({ node, depth, onRefresh, onError, draggedFile, setDraggedFile, deleteConfirm, setDeleteConfirm, selectedFile, onSelect }: TreeNodeProps) {
   const [expanded, setExpanded] = useState(depth < 2)
   const [isDragOver, setIsDragOver] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -277,6 +279,8 @@ function TreeNode({ node, depth, onRefresh, onError, draggedFile, setDraggedFile
             setDraggedFile={setDraggedFile}
             deleteConfirm={deleteConfirm}
             setDeleteConfirm={setDeleteConfirm}
+            selectedFile={selectedFile}
+            onSelect={onSelect}
           />
         ))}
       </div>
@@ -286,18 +290,22 @@ function TreeNode({ node, depth, onRefresh, onError, draggedFile, setDraggedFile
   /* --- File row --- */
   const isBeingDragged = draggedFile === node.path
   const isDeleteTarget = deleteConfirm === node.path
+  const isSelected = selectedFile === node.path
   const ext = getExt(node.name)
+  const cat = getAssetCategory(node.name)
+  const isPreviewable = cat === 'image' || cat === 'audio'
 
   return (
     <>
       <div
-        className={`group flex items-center gap-1.5 py-1 px-2 select-none hover:bg-slate-50 transition-colors rounded ${
+        className={`group flex items-center gap-1.5 py-1 px-2 select-none transition-colors rounded cursor-pointer ${
           isBeingDragged ? 'opacity-40' : ''
-        }`}
+        } ${isSelected ? 'bg-indigo-50' : 'hover:bg-slate-50'}`}
         style={{ paddingLeft }}
         draggable
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
+        onClick={() => isPreviewable ? onSelect(isSelected ? null : node) : undefined}
       >
         <FileIcon name={node.name} />
         <span className="text-xs text-slate-600 truncate flex-1" title={node.path}>
@@ -361,6 +369,9 @@ export function AssetsPanel() {
   const [error, setError] = useState<string | null>(null)
   const [draggedFile, setDraggedFile] = useState<string | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
+  const [selectedNode, setSelectedNode] = useState<AssetNode | null>(null)
+  const [previewData, setPreviewData] = useState<{ base64: string; mimeType: string } | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
   const errorTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
 
   const loadTree = useCallback(async () => {
@@ -380,6 +391,27 @@ export function AssetsPanel() {
     setError(msg)
     if (errorTimer.current) clearTimeout(errorTimer.current)
     errorTimer.current = setTimeout(() => setError(null), 4000)
+  }, [])
+
+  const handleSelect = useCallback(async (node: AssetNode | null) => {
+    if (!node) {
+      setSelectedNode(null)
+      setPreviewData(null)
+      return
+    }
+    setSelectedNode(node)
+    setPreviewLoading(true)
+    setPreviewData(null)
+    try {
+      const result = await window.miniplay?.assetsRead?.({ filePath: node.path })
+      if (result?.base64 && result?.mimeType) {
+        setPreviewData({ base64: result.base64, mimeType: result.mimeType })
+      }
+    } catch {
+      // ignore
+    } finally {
+      setPreviewLoading(false)
+    }
   }, [])
 
   useEffect(() => {
@@ -407,7 +439,7 @@ export function AssetsPanel() {
       </div>
 
       {/* Tree */}
-      <div className="flex-1 overflow-y-auto py-1">
+      <div className={`overflow-y-auto py-1 ${selectedNode ? 'flex-1 min-h-0' : 'flex-1'}`}>
         {loading && tree.length === 0 ? (
           <div className="flex items-center justify-center h-full">
             <span className="w-5 h-5 rounded-full border-2 border-indigo-500 border-t-transparent animate-spin" />
@@ -428,6 +460,8 @@ export function AssetsPanel() {
               setDraggedFile={setDraggedFile}
               deleteConfirm={deleteConfirm}
               setDeleteConfirm={setDeleteConfirm}
+              selectedFile={selectedNode?.path ?? null}
+              onSelect={handleSelect}
             />
           ))
         )}
@@ -439,6 +473,85 @@ export function AssetsPanel() {
           {error}
         </div>
       )}
+
+      {/* Asset Preview */}
+      {selectedNode && (
+        <AssetPreview
+          node={selectedNode}
+          data={previewData}
+          loading={previewLoading}
+          onClose={() => { setSelectedNode(null); setPreviewData(null) }}
+        />
+      )}
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/*  AssetPreview                                                      */
+/* ------------------------------------------------------------------ */
+
+interface AssetPreviewProps {
+  node: AssetNode
+  data: { base64: string; mimeType: string } | null
+  loading: boolean
+  onClose: () => void
+}
+
+function AssetPreview({ node, data, loading, onClose }: AssetPreviewProps) {
+  const cat = getAssetCategory(node.name)
+  const dataUrl = data ? `data:${data.mimeType};base64,${data.base64}` : null
+
+  return (
+    <div className="border-t border-slate-200 shrink-0">
+      {/* Preview header */}
+      <div className="flex items-center justify-between px-3 py-1.5">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <FileIcon name={node.name} />
+          <span className="text-[11px] font-medium text-slate-600 truncate">{node.name}</span>
+          {node.size !== undefined && (
+            <span className="text-[10px] text-slate-300 shrink-0">{formatSize(node.size)}</span>
+          )}
+        </div>
+        <button
+          onClick={onClose}
+          className="p-0.5 rounded hover:bg-slate-100 transition-colors shrink-0"
+        >
+          <X className="w-3 h-3 text-slate-400" />
+        </button>
+      </div>
+
+      {/* Preview content */}
+      <div className="px-3 pb-3">
+        {loading ? (
+          <div className="flex items-center justify-center h-32 bg-slate-50 rounded-lg">
+            <span className="w-4 h-4 rounded-full border-2 border-indigo-500 border-t-transparent animate-spin" />
+          </div>
+        ) : !dataUrl ? (
+          <div className="flex items-center justify-center h-20 bg-slate-50 rounded-lg text-xs text-slate-400">
+            Unable to load preview
+          </div>
+        ) : cat === 'image' ? (
+          <div className="flex items-center justify-center bg-[repeating-conic-gradient(#f1f5f9_0%_25%,#fff_0%_50%)] bg-[length:16px_16px] rounded-lg overflow-hidden max-h-48">
+            <img
+              src={dataUrl}
+              alt={node.name}
+              className="max-w-full max-h-48 object-contain"
+            />
+          </div>
+        ) : cat === 'audio' ? (
+          <div className="bg-slate-50 rounded-lg p-3">
+            <audio
+              controls
+              src={dataUrl}
+              className="w-full h-8"
+              style={{ minHeight: 32 }}
+            >
+              Your browser does not support the audio element.
+            </audio>
+          </div>
+        ) : null}
+      </div>
     </div>
   )
 }

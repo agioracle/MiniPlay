@@ -296,4 +296,32 @@ export function registerAssetsHandlers() {
       return { success: false, error: err.message };
     }
   });
+
+  /** Read a file as base64 for preview */
+  ipcMain.handle('assets:read', async (_event, payload: { filePath: string }) => {
+    const projectPath = getActiveProject();
+    if (!projectPath) return { error: 'No active project' };
+
+    const { filePath } = payload;
+    const absFile = path.join(projectPath, filePath);
+
+    if (!fs.existsSync(absFile)) {
+      return { error: 'File not found' };
+    }
+
+    try {
+      const buffer = fs.readFileSync(absFile);
+      const ext = path.extname(filePath).toLowerCase();
+      // Determine MIME type
+      const mimeMap: Record<string, string> = {
+        '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+        '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml',
+        '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg', '.wav': 'audio/wav', '.aac': 'audio/aac',
+      };
+      const mimeType = mimeMap[ext] || 'application/octet-stream';
+      return { base64: buffer.toString('base64'), mimeType };
+    } catch (err: any) {
+      return { error: err.message };
+    }
+  });
 }
