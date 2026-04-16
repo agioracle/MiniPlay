@@ -165,14 +165,17 @@ export async function runHydration(win: BrowserWindow): Promise<boolean> {
 
 /**
  * Quick check — is hydration already complete?
+ * 
+ * Validates that:
+ * 1. Config flag is set to true
+ * 2. Node.js is actually installed and functional
+ * 3. Invalidates the flag if validation fails
  */
 export function isHydrationComplete(): boolean {
   const config = readConfig();
   if (!config.hydrationComplete) return false;
 
-  const managedBin = getManagedNodeBinDir();
-  if (managedBin) return true;
-
+  // Always validate Node works, regardless of managed/system
   const node = detectNode();
   if (!node.found) {
     writeConfig({ hydrationComplete: false });
