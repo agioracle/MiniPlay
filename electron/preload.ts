@@ -57,6 +57,14 @@ export interface ProjectEntry {
   thumbnail: string | null;
 }
 
+export interface AssetNode {
+  name: string;
+  path: string;
+  type: 'file' | 'directory';
+  size?: number;
+  children?: AssetNode[];
+}
+
 export interface MiniPlayAPI {
   // Echo test
   echo: (message: string) => Promise<string>;
@@ -103,6 +111,13 @@ export interface MiniPlayAPI {
   // GDD
   gddRead: () => Promise<{ content: string; error?: string }>;
   gddWrite: (content: string) => Promise<{ success: boolean; error?: string }>;
+
+  // Assets
+  assetsList: () => Promise<{ tree: AssetNode[]; error?: string }>;
+  assetsMove: (payload: { src: string; dest: string }) => Promise<{ success: boolean; error?: string }>;
+  assetsAdd: (payload: { dirPath: string; fileName: string; fileBase64: string; fileMimeType: string }) => Promise<{ success: boolean; error?: string }>;
+  assetsReplace: (payload: { targetPath: string; newFileBase64: string; newFileName: string; newFileMimeType: string }) => Promise<{ success: boolean; error?: string }>;
+  assetsDelete: (payload: { filePath: string }) => Promise<{ success: boolean; error?: string }>;
 
   // Git / Time Travel
   gitVersions: (projectPath?: string) => Promise<{ versions: unknown[] }>;
@@ -175,6 +190,12 @@ const api: MiniPlayAPI = {
 
   gddRead: () => ipcRenderer.invoke('gdd:read'),
   gddWrite: (content: string) => ipcRenderer.invoke('gdd:write', content),
+
+  assetsList: () => ipcRenderer.invoke('assets:list'),
+  assetsMove: (payload: { src: string; dest: string }) => ipcRenderer.invoke('assets:move', payload),
+  assetsAdd: (payload: { dirPath: string; fileName: string; fileBase64: string; fileMimeType: string }) => ipcRenderer.invoke('assets:add', payload),
+  assetsReplace: (payload: { targetPath: string; newFileBase64: string; newFileName: string; newFileMimeType: string }) => ipcRenderer.invoke('assets:replace', payload),
+  assetsDelete: (payload: { filePath: string }) => ipcRenderer.invoke('assets:delete', payload),
 
   gitVersions: (projectPath?: string) => ipcRenderer.invoke('git:versions', projectPath),
   gitCommit: (payload: { summary: string; changedFiles?: string[]; triggerMessageId?: string }) =>

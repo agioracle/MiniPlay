@@ -9,6 +9,7 @@ import { registerCoderHandlers } from './ipc/coder';
 import { registerPreviewHandlers } from './ipc/preview';
 import { registerGitHandlers } from './ipc/git';
 import { registerExportHandlers } from './ipc/export';
+import { registerAssetsHandlers } from './ipc/assets';
 import { ensureMiniPlayHome } from './storage/paths';
 import { teardownPreview } from './process/preview-bridge';
 import { initHydrationPath } from './hydration/index';
@@ -66,6 +67,7 @@ registerCoderHandlers();
 registerPreviewHandlers();
 registerGitHandlers();
 registerExportHandlers();
+registerAssetsHandlers();
 
 app.whenReady().then(createWindow);
 

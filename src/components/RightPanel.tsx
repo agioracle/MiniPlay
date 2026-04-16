@@ -3,8 +3,9 @@
 import { useState } from 'react'
 import { LiveView } from '@/components/LiveView'
 import { GddEditor } from '@/components/GddEditor'
+import { AssetsPanel } from '@/components/AssetsPanel'
 
-type RightTab = 'preview' | 'gdd'
+type RightTab = 'preview' | 'gdd' | 'assets'
 
 export function RightPanel({ autoPreview = false }: { autoPreview?: boolean }) {
   const [activeTab, setActiveTab] = useState<RightTab>('preview')
@@ -33,6 +34,16 @@ export function RightPanel({ autoPreview = false }: { autoPreview?: boolean }) {
         >
           GD Document
         </button>
+        <button
+          onClick={() => setActiveTab('assets')}
+          className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+            activeTab === 'assets'
+              ? 'bg-indigo-50 text-indigo-700'
+              : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          Assets
+        </button>
       </div>
 
       {/* Content — both panels always mounted, toggle visibility via CSS */}
@@ -42,6 +53,9 @@ export function RightPanel({ autoPreview = false }: { autoPreview?: boolean }) {
         </div>
         <div className={`h-full bg-white rounded-2xl overflow-hidden border border-slate-200 shadow-sm ${activeTab === 'gdd' ? '' : 'hidden'}`}>
           <GddEditor />
+        </div>
+        <div className={`h-full bg-white rounded-2xl overflow-hidden border border-slate-200 shadow-sm ${activeTab === 'assets' ? '' : 'hidden'}`}>
+          <AssetsPanel />
         </div>
       </div>
     </div>
