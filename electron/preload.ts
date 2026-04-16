@@ -36,6 +36,7 @@ export interface AgentStreamEvent {
   args?: Record<string, unknown>;
   result?: unknown;
   error?: string;
+  batchId?: string;
 }
 
 export interface StoredMessage {

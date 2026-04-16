@@ -101,8 +101,10 @@ export function registerCoderHandlers() {
         messageWithImages += `\n\nAttached images (view these files for reference):\n${pathList}`;
       }
 
+      const batchId = `coder_${Date.now()}`;
+
       const sendEvent = (data: Record<string, unknown>) => {
-        win.webContents.send('agent:stream', data);
+        win.webContents.send('agent:stream', { ...data, batchId });
       };
 
       const onStatus = (status: string) => {
@@ -118,7 +120,7 @@ export function registerCoderHandlers() {
 
       try {
         // Signal start
-        sendEvent({ type: 'tool-call', toolCallId: 'coder_direct', toolName: 'send_to_coder' });
+        sendEvent({ type: 'tool-call', toolCallId: batchId, toolName: 'send_to_coder' });
         onStatus('launching');
 
         const result = await runCoderAgent({
@@ -129,7 +131,7 @@ export function registerCoderHandlers() {
         });
 
         onStatus(result.success ? 'done' : 'failed');
-        sendEvent({ type: 'tool-result', toolCallId: 'coder_direct' });
+        sendEvent({ type: 'tool-result', toolCallId: batchId });
 
         console.log('[coder:send] Result: %s, changed: %s', result.status, result.changedFiles.join(', ') || '(none)');
 

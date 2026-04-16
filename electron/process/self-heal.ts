@@ -93,9 +93,13 @@ export async function selfHeal(options: {
 
     const selfHealId = `selfheal_${attempt}_${Date.now()}`;
 
+    const sendBatch = (data: Record<string, unknown>) => {
+      send({ ...data, batchId: selfHealId });
+    };
+
     // Close previous attempt's bubble (if any)
     if (attempt > 1) {
-      send({ type: 'done' });
+      // Previous batch already got done via its own batchId
     }
 
     // Notify preview status
@@ -106,33 +110,33 @@ export async function selfHeal(options: {
     });
 
     // Start a new Code Agent bubble for this attempt
-    send({
+    sendBatch({
       type: 'tool-call',
       toolCallId: selfHealId,
       toolName: 'send_to_coder',
     });
 
     // Show captured errors as initial coder output
-    send({
+    sendBatch({
       type: 'coder-status',
       text: `fixing (attempt ${attempt}/${MAX_RETRIES})`,
     });
-    send({
+    sendBatch({
       type: 'coder-output',
       text: `🔍 Captured ${currentErrors.length} error(s):`,
     });
     for (const err of currentErrors) {
       const loc = err.file ? `${err.file}:${err.line || '?'}` : '';
-      send({ type: 'coder-output', text: `  ❌ ${loc} ${err.message}` });
+      sendBatch({ type: 'coder-output', text: `  ❌ ${loc} ${err.message}` });
       if (err.stack) {
         // Show stack trace lines indented
         for (const stackLine of err.stack.split('\n').slice(0, 8)) {
-          send({ type: 'coder-output', text: `     ${stackLine.trimStart()}` });
+          sendBatch({ type: 'coder-output', text: `     ${stackLine.trimStart()}` });
         }
       }
     }
-    send({ type: 'coder-output', text: '' });
-    send({ type: 'coder-output', text: `🔧 Sending to Code Agent for auto-fix...` });
+    sendBatch({ type: 'coder-output', text: '' });
+    sendBatch({ type: 'coder-output', text: `🔧 Sending to Code Agent for auto-fix...` });
 
     // Ask coder agent to fix — stream status and output to renderer
     const fixPrompt = buildFixPrompt(currentErrors, projectDir);
@@ -143,32 +147,34 @@ export async function selfHeal(options: {
         const label = status === 'agent:planning' ? `fixing (attempt ${attempt}/${MAX_RETRIES}) — planning`
           : status === 'agent:coding' ? `fixing (attempt ${attempt}/${MAX_RETRIES}) — coding`
           : `fixing (attempt ${attempt}/${MAX_RETRIES})`;
-        send({ type: 'coder-status', text: label });
+        sendBatch({ type: 'coder-status', text: label });
       },
       onOutput: (line) => {
-        send({ type: 'coder-output', text: line });
+        sendBatch({ type: 'coder-output', text: line });
       },
     });
 
     if (!coderResult.success) {
-      send({ type: 'coder-status', text: `attempt ${attempt} failed — agent error` });
-      send({ type: 'coder-output', text: `❌ Code Agent failed: ${coderResult.error || 'unknown error'}` });
+      sendBatch({ type: 'coder-status', text: `attempt ${attempt} failed — agent error` });
+      sendBatch({ type: 'coder-output', text: `❌ Code Agent failed: ${coderResult.error || 'unknown error'}` });
+      sendBatch({ type: 'tool-result', toolCallId: selfHealId });
+      sendBatch({ type: 'done' });
       console.log('[SelfHeal] Coder agent failed on attempt %d', attempt);
       continue;
     }
 
     // Try rebuilding
-    send({ type: 'coder-output', text: '' });
-    send({ type: 'coder-output', text: '🏗️ Rebuilding preview...' });
-    send({ type: 'coder-status', text: `attempt ${attempt} — rebuilding` });
+    sendBatch({ type: 'coder-output', text: '' });
+    sendBatch({ type: 'coder-output', text: '🏗️ Rebuilding preview...' });
+    sendBatch({ type: 'coder-status', text: `attempt ${attempt} — rebuilding` });
 
     const buildResult = await runH5Build(projectDir);
 
     if (buildResult.success) {
-      send({ type: 'coder-status', text: 'done' });
-      send({ type: 'coder-output', text: `✅ Build succeeded! Preview refreshing...` });
-      send({ type: 'tool-result', toolCallId: selfHealId });
-      send({ type: 'done' });
+      sendBatch({ type: 'coder-status', text: 'done' });
+      sendBatch({ type: 'coder-output', text: `✅ Build succeeded! Preview refreshing...` });
+      sendBatch({ type: 'tool-result', toolCallId: selfHealId });
+      sendBatch({ type: 'done' });
 
       // Restart preview server
       try {
@@ -183,14 +189,14 @@ export async function selfHeal(options: {
 
     // Build failed — show new errors and continue
     currentErrors = parseBuildError(buildResult.error || buildResult.output);
-    send({ type: 'coder-output', text: `❌ Build still failing — ${currentErrors.length} error(s) remaining` });
-    send({ type: 'coder-status', text: `attempt ${attempt} — build failed` });
-    send({ type: 'tool-result', toolCallId: selfHealId });
+    sendBatch({ type: 'coder-output', text: `❌ Build still failing — ${currentErrors.length} error(s) remaining` });
+    sendBatch({ type: 'coder-status', text: `attempt ${attempt} — build failed` });
+    sendBatch({ type: 'tool-result', toolCallId: selfHealId });
+    sendBatch({ type: 'done' });
   }
 
   // All retries exhausted
   console.log('[SelfHeal] All %d attempts exhausted', MAX_RETRIES);
-  send({ type: 'done' });
   win?.webContents.send('preview:status', {
     status: 'self-heal-failed',
     errors: currentErrors,

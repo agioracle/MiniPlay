@@ -14,6 +14,14 @@ const DEFAULT_WELCOME: Message[] = [
   },
 ]
 
+interface CoderBatch {
+  batchId: string
+  status: string | null
+  output: string[]
+  started: boolean
+  done: boolean
+}
+
 interface ChatPanelProps {
   initialMessages?: Message[]
   onSend: (text: string, images?: ImageAttachment[]) => Promise<{ text?: string; toolCalls?: unknown[]; error?: string; projectCreated?: boolean; success?: boolean }>
@@ -25,29 +33,28 @@ export function ChatPanel({ initialMessages, onSend, projectPhase = 'gd' }: Chat
   const [isLoading, setIsLoading] = useState(false)
   const [streamingText, setStreamingText] = useState('')
   const [activeToolCalls, setActiveToolCalls] = useState<Map<string, { name: string; status: 'running' | 'done' }>>(new Map())
-  const [coderStatus, setCoderStatus] = useState<string | null>(null)
-  const [coderOutput, setCoderOutput] = useState<string[]>([])
+  const [coderBatches, setCoderBatches] = useState<CoderBatch[]>([])
   const scrollRef = useRef<HTMLDivElement>(null)
-  const coderLogRef = useRef<HTMLDivElement>(null)
+  const coderLogRefs = useRef<Map<string, HTMLDivElement>>(new Map())
 
   // Sync messages when initialMessages prop changes (e.g. opening a different project)
   useEffect(() => {
     setMessages(initialMessages ?? DEFAULT_WELCOME)
   }, [initialMessages])
 
-  // Auto-scroll coder log to bottom
+  // Auto-scroll coder logs to bottom
   useEffect(() => {
-    if (coderLogRef.current) {
-      coderLogRef.current.scrollTop = coderLogRef.current.scrollHeight
+    for (const [, el] of coderLogRefs.current) {
+      if (el) el.scrollTop = el.scrollHeight
     }
-  }, [coderOutput])
+  }, [coderBatches])
 
   // Auto-scroll chat
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
     }
-  }, [messages, streamingText, coderOutput])
+  }, [messages, streamingText, coderBatches])
 
   // Listen for agent stream events
   useEffect(() => {
@@ -57,25 +64,71 @@ export function ChatPanel({ initialMessages, onSend, projectPhase = 'gd' }: Chat
       if (event.type === 'text-delta' && event.text) {
         setStreamingText(prev => prev + event.text)
       } else if (event.type === 'tool-call' && event.toolCallId && event.toolName) {
-        setActiveToolCalls(prev => {
-          const next = new Map(prev)
-          next.set(event.toolCallId!, { name: event.toolName!, status: 'running' })
-          return next
-        })
-        // When send_to_coder starts, reset coder state
-        if (event.toolName === 'send_to_coder') {
-          setCoderStatus(null)
-          setCoderOutput([])
+        if (event.toolName === 'send_to_coder' && event.batchId) {
+          // Create a new coder batch
+          setCoderBatches(prev => {
+            // Don't create duplicate
+            if (prev.some(b => b.batchId === event.batchId)) return prev
+            return [...prev, {
+              batchId: event.batchId!,
+              status: null,
+              output: [],
+              started: false,
+              done: false,
+            }]
+          })
+        } else if (event.toolName !== 'send_to_coder') {
+          // Non-coder tool call — track in activeToolCalls
+          setActiveToolCalls(prev => {
+            const next = new Map(prev)
+            next.set(event.toolCallId!, { name: event.toolName!, status: 'running' })
+            return next
+          })
         }
-      } else if (event.type === 'coder-status' && event.text) {
-        setCoderStatus(event.text)
-      } else if (event.type === 'coder-output' && event.text) {
-        setCoderOutput(prev => {
-          const next = [...prev, event.text!]
-          // Keep last 200 lines to avoid memory issues
-          return next.length > 200 ? next.slice(-200) : next
+        // send_to_coder without batchId (from GD Agent onChunk) — ignore, the tool's execute() sends its own with batchId
+      } else if (event.type === 'coder-status' && event.text && event.batchId) {
+        setCoderBatches(prev => prev.map(b =>
+          b.batchId === event.batchId
+            ? { ...b, status: event.text!, started: true }
+            : b
+        ))
+      } else if (event.type === 'coder-status' && event.text && !event.batchId) {
+        // Legacy: update the last active (non-done) batch
+        setCoderBatches(prev => {
+          let idx = -1
+          for (let i = prev.length - 1; i >= 0; i--) {
+            if (!prev[i].done) { idx = i; break }
+          }
+          if (idx < 0) return prev
+          const updated = [...prev]
+          updated[idx] = { ...updated[idx], status: event.text!, started: true }
+          return updated
+        })
+      } else if (event.type === 'coder-output' && event.text !== undefined) {
+        const batchId = event.batchId
+        setCoderBatches(prev => {
+          let targetIdx: number
+          if (batchId) {
+            targetIdx = prev.findIndex(b => b.batchId === batchId)
+          } else {
+            targetIdx = -1
+            for (let i = prev.length - 1; i >= 0; i--) {
+              if (!prev[i].done) { targetIdx = i; break }
+            }
+          }
+          if (targetIdx < 0) return prev
+          const updated = [...prev]
+          const batch = updated[targetIdx]
+          const newOutput = [...batch.output, event.text!]
+          updated[targetIdx] = {
+            ...batch,
+            output: newOutput.length > 200 ? newOutput.slice(-200) : newOutput,
+            started: true,
+          }
+          return updated
         })
       } else if (event.type === 'tool-result' && event.toolCallId) {
+        // Update non-coder tool calls
         setActiveToolCalls(prev => {
           const next = new Map(prev)
           const existing = next.get(event.toolCallId!)
@@ -85,11 +138,15 @@ export function ChatPanel({ initialMessages, onSend, projectPhase = 'gd' }: Chat
           return next
         })
       } else if (event.type === 'done') {
-        // Streaming complete — clear GD Agent streaming text only.
-        // Coder state (status, output, tool calls) is cleared when the
-        // next handleSend starts, so the Code Agent bubble stays visible
-        // until the final message replaces it.
-        setStreamingText('')
+        if (event.batchId) {
+          // Mark specific batch as done
+          setCoderBatches(prev => prev.map(b =>
+            b.batchId === event.batchId ? { ...b, done: true } : b
+          ))
+        } else {
+          // Legacy GD Agent done — clear streaming text
+          setStreamingText('')
+        }
       } else if (event.type === 'error') {
         setStreamingText('')
       }
@@ -110,8 +167,8 @@ export function ChatPanel({ initialMessages, onSend, projectPhase = 'gd' }: Chat
     setIsLoading(true)
     setStreamingText('')
     setActiveToolCalls(new Map())
-    setCoderStatus(null)
-    setCoderOutput([])
+    // Clear completed batches, keep active ones
+    setCoderBatches(prev => prev.filter(b => !b.done))
 
     try {
       const result = await onSend(text, images)
@@ -133,7 +190,6 @@ export function ChatPanel({ initialMessages, onSend, projectPhase = 'gd' }: Chat
           toolCalls: result.toolCalls as Message['toolCalls'],
         }])
       }
-      // For coder:send — no text response, status shown via stream events
     } catch (err) {
       setMessages(prev => [...prev, {
         id: `msg_${Date.now()}_error`,
@@ -143,12 +199,20 @@ export function ChatPanel({ initialMessages, onSend, projectPhase = 'gd' }: Chat
       }])
     } finally {
       setIsLoading(false)
-      // Clear coder real-time UI after final message has been added
       setActiveToolCalls(new Map())
-      setCoderStatus(null)
-      setCoderOutput([])
     }
   }, [onSend])
+
+  const setCoderLogRef = useCallback((batchId: string, el: HTMLDivElement | null) => {
+    if (el) {
+      coderLogRefs.current.set(batchId, el)
+    } else {
+      coderLogRefs.current.delete(batchId)
+    }
+  }, [])
+
+  // Filter batches that have started (have received at least one status/output event)
+  const visibleBatches = coderBatches.filter(b => b.started)
 
   return (
     <>
@@ -172,7 +236,7 @@ export function ChatPanel({ initialMessages, onSend, projectPhase = 'gd' }: Chat
         )}
 
         {/* GD Agent tool calls (non-coder tools only) */}
-        {activeToolCalls.size > 0 && !Array.from(activeToolCalls.values()).some(tc => tc.name === 'send_to_coder') && (
+        {activeToolCalls.size > 0 && (
           <div className="space-y-1.5">
             {Array.from(activeToolCalls.entries()).map(([id, tc]) => (
               <div key={id} className="flex items-center gap-2 text-xs text-slate-500 pl-2">
@@ -196,9 +260,9 @@ export function ChatPanel({ initialMessages, onSend, projectPhase = 'gd' }: Chat
           </div>
         )}
 
-        {/* Code Agent bubble — wraps status + log + build into one chat message */}
-        {(coderOutput.length > 0 || Array.from(activeToolCalls.values()).some(tc => tc.name === 'send_to_coder')) && (
-          <div className="flex justify-start">
+        {/* Code Agent bubbles — one per batch */}
+        {visibleBatches.map((batch) => (
+          <div key={batch.batchId} className="flex justify-start">
             <div className="rounded-xl px-3.5 py-2.5 max-w-[90%] bg-emerald-50 text-slate-800 mr-8">
               <div className="flex items-center gap-1.5 mb-2 text-emerald-600">
                 <Terminal className="w-3.5 h-3.5" />
@@ -207,13 +271,13 @@ export function ChatPanel({ initialMessages, onSend, projectPhase = 'gd' }: Chat
 
               {/* Coder status line */}
               <div className="flex items-center gap-2 text-xs text-slate-600 mb-2">
-                {coderStatus === 'done' ? (
+                {batch.status === 'done' ? (
                   <span className="w-3.5 h-3.5 rounded-full bg-emerald-100 flex items-center justify-center">
                     <svg className="w-2 h-2 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                     </svg>
                   </span>
-                ) : coderStatus === 'failed' || coderStatus?.includes('failed') ? (
+                ) : batch.status === 'failed' || batch.status?.includes('failed') ? (
                   <span className="w-3.5 h-3.5 rounded-full bg-red-100 flex items-center justify-center">
                     <svg className="w-2 h-2 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -223,45 +287,26 @@ export function ChatPanel({ initialMessages, onSend, projectPhase = 'gd' }: Chat
                   <span className="w-3.5 h-3.5 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin" />
                 )}
                 <span>
-                  {coderStatus
-                    ? coderStatus === 'launching' ? 'Launching...'
-                      : coderStatus === 'agent:planning' ? 'Planning...'
-                      : coderStatus === 'agent:coding' ? 'Working...'
-                      : coderStatus === 'done' ? 'Done'
-                      : coderStatus === 'failed' ? 'Failed'
-                      : coderStatus.charAt(0).toUpperCase() + coderStatus.slice(1)
+                  {batch.status
+                    ? batch.status === 'launching' ? 'Launching...'
+                      : batch.status === 'agent:planning' ? 'Planning...'
+                      : batch.status === 'agent:coding' ? 'Working...'
+                      : batch.status === 'done' ? 'Done'
+                      : batch.status === 'failed' ? 'Failed'
+                      : batch.status.charAt(0).toUpperCase() + batch.status.slice(1)
                     : 'Starting...'
                   }
                 </span>
               </div>
 
-              {/* Build status (if trigger_build is active alongside coder) */}
-              {Array.from(activeToolCalls.entries())
-                .filter(([, tc]) => tc.name === 'trigger_build')
-                .map(([id, tc]) => (
-                  <div key={id} className="flex items-center gap-2 text-xs text-slate-600 mb-2">
-                    {tc.status === 'running' ? (
-                      <span className="w-3.5 h-3.5 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin" />
-                    ) : (
-                      <span className="w-3.5 h-3.5 rounded-full bg-emerald-100 flex items-center justify-center">
-                        <svg className="w-2 h-2 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                        </svg>
-                      </span>
-                    )}
-                    <span>{tc.status === 'running' ? 'Building preview...' : 'Build complete'}</span>
-                  </div>
-                ))
-              }
-
-              {/* Coder output log — always visible, max 5 lines, auto-scroll */}
-              {coderOutput.length > 0 && (
+              {/* Coder output log */}
+              {batch.output.length > 0 && (
                 <div className="mt-1">
                   <div
-                    ref={coderLogRef}
+                    ref={(el) => setCoderLogRef(batch.batchId, el)}
                     className="rounded-lg bg-slate-900 text-slate-300 text-[11px] font-mono p-2.5 max-h-[160px] overflow-y-auto leading-relaxed"
                   >
-                    {coderOutput.map((line, i) => (
+                    {batch.output.map((line, i) => (
                       <div key={i} className="whitespace-pre-wrap break-all">{line}</div>
                     ))}
                   </div>
@@ -269,10 +314,10 @@ export function ChatPanel({ initialMessages, onSend, projectPhase = 'gd' }: Chat
               )}
             </div>
           </div>
-        )}
+        ))}
 
         {/* Loading indicator (no streaming text yet) */}
-        {isLoading && !streamingText && activeToolCalls.size === 0 && (
+        {isLoading && !streamingText && activeToolCalls.size === 0 && visibleBatches.length === 0 && (
           <div className="flex items-center gap-2 text-slate-400 text-sm">
             <span className="inline-block w-1.5 h-1.5 rounded-full bg-slate-400 animate-pulse" />
             Thinking...

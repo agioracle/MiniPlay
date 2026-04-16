@@ -36,6 +36,7 @@ export const sendToCoderTool = tool({
         win.webContents.send('agent:stream', {
           type: 'coder-status',
           toolCallId: coderToolCallId,
+          batchId: coderToolCallId,
           text: status,
         });
       }
@@ -44,12 +45,22 @@ export const sendToCoderTool = tool({
       if (win) {
         win.webContents.send('agent:stream', {
           type: 'coder-output',
+          batchId: coderToolCallId,
           text: line,
         });
       }
     };
 
     try {
+      // Emit a batch-identified tool-call so ChatPanel creates a new coder bubble
+      if (win) {
+        win.webContents.send('agent:stream', {
+          type: 'tool-call',
+          toolCallId: coderToolCallId,
+          toolName: 'send_to_coder',
+          batchId: coderToolCallId,
+        });
+      }
       sendCoderStatus('launching');
       console.log('[send_to_coder] Launching coder agent...');
 
