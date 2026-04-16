@@ -1,0 +1,57 @@
+{
+  "name": "miniplay-native",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MiniPlay Native - AI-powered WeChat mini-game generator",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "concurrently -n next,tsc,electron \"next dev --port 3000\" \"tsc -p tsconfig.electron.json -w\" \"wait-on http://localhost:3000 && tsc -p tsconfig.electron.json && electron .\"",
+    "dev:next": "next dev --port 3000",
+    "dev:electron": "tsc -p tsconfig.electron.json && electron .",
+    "build:next": "next build",
+    "build:electron": "tsc -p tsconfig.electron.json",
+    "build": "npm run build:next && npm run build:electron",
+    "dist": "npm run build && electron-builder --mac",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.69",
+    "@ai-sdk/openai": "^3.0.52",
+    "ai": "^6.0.159",
+    "electron-store": "^10.0.0",
+    "lucide-react": "^1.8.0",
+    "motion": "^12.38.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.1.4",
+    "@types/node": "^22.15.3",
+    "@types/react": "^19.1.2",
+    "@types/react-dom": "^19.1.2",
+    "concurrently": "^9.1.2",
+    "electron": "^35.1.2",
+    "electron-builder": "^26.0.12",
+    "next": "^15.3.2",
+    "postcss": "^8.5.3",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "tailwindcss": "^4.1.4",
+    "typescript": "^5.8.3",
+    "wait-on": "^8.0.3"
+  },
+  "build": {
+    "appId": "com.miniplay.native",
+    "productName": "MiniPlay",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist-electron/**/*",
+      "out/**/*"
+    ],
+    "mac": {
+      "target": "dmg",
+      "icon": null
+    }
+  }
+}
