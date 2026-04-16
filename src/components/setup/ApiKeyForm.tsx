@@ -68,13 +68,21 @@ export function ApiKeyForm({ onSaved }: ApiKeyFormProps) {
       </div>
 
       {/* Continue */}
-      <button
-        onClick={handleSave}
-        disabled={!apiKey.trim() || !apiEndpoint.trim() || !model.trim() || saving}
-        className="w-full py-2.5 text-sm font-medium rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-30 disabled:cursor-not-allowed text-white transition-colors"
-      >
-        {saving ? 'Saving...' : 'Continue'}
-      </button>
+      <div className="flex gap-3">
+        <button
+          onClick={onSaved}
+          className="flex-1 py-2.5 text-sm font-medium rounded-lg text-slate-500 hover:text-slate-700 hover:bg-white/60 transition-colors"
+        >
+          Skip for now
+        </button>
+        <button
+          onClick={handleSave}
+          disabled={!apiKey.trim() || !apiEndpoint.trim() || !model.trim() || saving}
+          className="flex-1 py-2.5 text-sm font-medium rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-30 disabled:cursor-not-allowed text-white transition-colors"
+        >
+          {saving ? 'Saving...' : 'Continue'}
+        </button>
+      </div>
     </div>
   )
 }

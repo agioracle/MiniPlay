@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { SetupWizard } from '@/components/setup/SetupWizard'
+import { EnvCheckScreen } from '@/components/EnvCheckScreen'
+import { WaveDotsBackground } from '@/components/WaveDotsBackground'
 import { TopBar } from '@/components/TopBar'
 import { ChatPanel } from '@/components/ChatPanel'
 import { RightPanel } from '@/components/RightPanel'
@@ -11,7 +13,7 @@ import { SettingsDialog } from '@/components/SettingsDialog'
 import type { Message } from '@/components/ChatMessage'
 import type { ImageAttachment } from '@/components/ChatInput'
 
-type AppView = 'loading' | 'setup' | 'home' | 'workspace'
+type AppView = 'loading' | 'setup' | 'env-check' | 'home' | 'workspace'
 type ProjectPhase = 'gd' | 'code'
 
 interface ProjectEntry {
@@ -39,8 +41,7 @@ export default function Home() {
       }
       try {
         const hydrated = await window.miniplay.hydrationCheck()
-        const config = await window.miniplay.configGet()
-        if (!hydrated || !config.apiKey) {
+        if (!hydrated) {
           setView('setup')
           return
         }
@@ -49,7 +50,7 @@ export default function Home() {
           const list = await window.miniplay.projectList()
           setProjects(list)
         }
-        setView('home')
+        setView('env-check')
       } catch {
         setView('home')
       }
@@ -166,11 +167,16 @@ export default function Home() {
     return <SetupWizard onComplete={() => { setView('home') }} />
   }
 
+  if (view === 'env-check') {
+    return <EnvCheckScreen onContinue={() => { setView('home') }} />
+  }
+
   if (view === 'home') {
     return (
-      <div className="flex flex-col h-screen">
+      <div className="relative flex flex-col h-screen bg-[#FAFAF8]">
+        <WaveDotsBackground />
         <header
-          className="flex items-center justify-between h-12 px-4 border-b border-slate-200 bg-white/80 backdrop-blur-sm"
+          className="relative z-10 flex items-center justify-between h-12 px-4 border-b border-slate-200/60 bg-white/60 backdrop-blur-sm"
           style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
         >
           <div className="w-20 shrink-0" />
@@ -188,7 +194,7 @@ export default function Home() {
           </button>
         </header>
 
-        <main className="flex-1 overflow-y-auto p-8">
+        <main className="relative z-10 flex-1 overflow-y-auto p-8">
           <div className="max-w-3xl mx-auto">
             <HeroSection />
             <h2 className="text-xl font-semibold text-slate-900 mb-6">Your Games</h2>
