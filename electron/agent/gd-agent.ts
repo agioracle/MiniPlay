@@ -65,8 +65,8 @@ export async function runGdAgentTurn(
 
   // Inject current date into system prompt so GDD timestamps are accurate
   const systemPrompt = GD_SYSTEM_PROMPT.replace(
-    /CURRENT_DATE/g,
-    new Date().toISOString().split('T')[0],
+    /CURRENT_DATETIME/g,
+    new Date().toISOString(),
   );
 
   const result = streamText({

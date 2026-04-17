@@ -99,7 +99,7 @@ export function ChatInput({ onSend, disabled, projectPhase = 'gd' }: ChatInputPr
       }
     }
 
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter' && e.shiftKey) {
       e.preventDefault()
       handleSubmit()
     }
@@ -281,7 +281,7 @@ export function ChatInput({ onSend, disabled, projectPhase = 'gd' }: ChatInputPr
           onKeyDown={handleKeyDown}
           onInput={handleInput}
           onPaste={handlePaste}
-          placeholder={projectPhase === 'code' ? 'Tell Code Agent what to build... (@gd to talk to GD Agent)' : 'Describe your game idea...'}
+          placeholder={projectPhase === 'code' ? 'Tell Code Agent what to build... (Shift+Enter to send)' : 'Describe your game idea... (Shift+Enter to send)'}
           disabled={disabled}
           className="flex-1 bg-transparent resize-none text-sm text-slate-900 placeholder:text-slate-400 outline-none max-h-[120px]"
         />

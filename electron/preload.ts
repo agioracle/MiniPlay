@@ -105,6 +105,7 @@ export interface MiniPlayAPI {
   previewRefresh: () => Promise<{ success: boolean; url?: string; error?: string }>;
   previewState: () => Promise<{ running: boolean; port: number; url: string | null }>;
   previewStop: () => Promise<{ success: boolean }>;
+  previewToggleDevtools: () => Promise<{ success: boolean }>;
   onPreviewStatus: (callback: (data: { status: string; url?: string; error?: string }) => void) => () => void;
   onPreviewRefresh: (callback: (data: { url: string }) => void) => () => void;
   previewRuntimeError: (data: { message?: string; source?: string; line?: number; stack?: string }) => Promise<{ handled: boolean; attempts: number }>;
@@ -128,7 +129,8 @@ export interface MiniPlayAPI {
   gitReturnToLatest: () => Promise<{ success: boolean; error?: string }>;
 
   // Export
-  exportRun: () => Promise<{ success?: boolean; zipPath?: string; size?: number; error?: string }>;
+  exportConfig: () => Promise<{ appid?: string; cdn?: string; hasRemoteAssets?: boolean; error?: string }>;
+  exportRun: (payload?: { appid?: string; cdn?: string }) => Promise<{ success?: boolean; zipPath?: string; size?: number; error?: string }>;
   onExportStatus: (callback: (data: { step: string }) => void) => () => void;
 
   // Generic stream listener
@@ -177,6 +179,7 @@ const api: MiniPlayAPI = {
   previewRefresh: () => ipcRenderer.invoke('preview:refresh'),
   previewState: () => ipcRenderer.invoke('preview:state'),
   previewStop: () => ipcRenderer.invoke('preview:stop'),
+  previewToggleDevtools: () => ipcRenderer.invoke('preview:toggle-devtools'),
   onPreviewStatus: (callback: (data: { status: string; url?: string; error?: string }) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, data: any) => callback(data);
     ipcRenderer.on('preview:status', handler);
@@ -206,7 +209,8 @@ const api: MiniPlayAPI = {
   gitCheckout: (commitHash: string) => ipcRenderer.invoke('git:checkout', commitHash),
   gitReturnToLatest: () => ipcRenderer.invoke('git:return-to-latest'),
 
-  exportRun: () => ipcRenderer.invoke('export:run'),
+  exportConfig: () => ipcRenderer.invoke('export:config'),
+  exportRun: (payload?: { appid?: string; cdn?: string }) => ipcRenderer.invoke('export:run', payload),
   onExportStatus: (callback: (data: { step: string }) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, data: any) => callback(data);
     ipcRenderer.on('export:status', handler);

@@ -27,12 +27,14 @@ Pay special attention to the "## Latest Patch" section — it contains the most 
 2. Do NOT modify src/main.js (it only registers BootScene)
 3. Do NOT modify phaser-wx.config.json
 4. Do NOT modify any files in node_modules/
-5. Use Phaser 3 API (this.add, this.physics, this.load, etc.)
-6. Keep subpackages design intact
-7. Keep file structure intact
-8. Keep BootScene → MenuScene → GameScene → GameOverScene flow
-9. Keep code clean and well-commented
-10. After modifying code, ALWAYS update the "## Latest Patch" section in ${gddPath} with a timestamped summary of what you changed and which files were affected
+5. Keep subpackages design intact
+6. Keep file structure intact
+7. Keep BootScene → MenuScene → GameScene → GameOverScene flow
+8. Keep code clean and well-commented
+9. Use Phaser 3 API (this.add, this.physics, this.load, etc.)
+10. Use safe area for all UI elements
+11. Use "assets" or "remote-assets" as assets relative path prefix
+12. After modifying code, ALWAYS update the "## Latest Patch" section in ${gddPath} with a timestamped summary of what you changed and which files were affected
 
 ## After making changes
 Summarize what files you changed and what you did.`;

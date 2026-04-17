@@ -134,10 +134,10 @@ When calling \`update_gdd\`, structure the GDD as follows:
 - Lives/HP: top-right
 
 ## Latest Patch
-- [CURRENT_DATE] Initial GDD created
+- [CURRENT_DATETIME] Initial GDD created
 \`\`\`
 
-Note: Replace CURRENT_DATE with the actual current date in ISO format (YYYY-MM-DD). Never use hardcoded or example dates.
+Note: Replace CURRENT_DATETIME with the actual current datetime in ISO format (YYYY-MM-DDTHH:mm:ss). Never use hardcoded or example dates.
 
 ## Defaults for Unspecified Fields
 If the user doesn't specify (and you've already asked), use these defaults:

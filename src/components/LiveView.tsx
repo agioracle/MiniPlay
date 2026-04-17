@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { RefreshCw, Hammer } from 'lucide-react'
+import { RefreshCw, Hammer, Bug } from 'lucide-react'
 
 type PreviewStatus = 'idle' | 'building' | 'starting-server' | 'ready' | 'build-failed' | 'server-failed'
 
@@ -112,6 +112,10 @@ export function LiveView({ autoPreview = false }: { autoPreview?: boolean }) {
     }
   }, [rebuilding])
 
+  const handleToggleDevtools = useCallback(() => {
+    window.miniplay?.previewToggleDevtools?.()
+  }, [])
+
   const isLoading = status === 'building' || status === 'starting-server'
   const isError = status === 'build-failed' || status === 'server-failed'
 
@@ -124,6 +128,13 @@ export function LiveView({ autoPreview = false }: { autoPreview?: boolean }) {
         </span>
         {(previewUrl || isError) && (
           <div className="flex items-center gap-1">
+            <button
+              onClick={handleToggleDevtools}
+              className="p-1 rounded hover:bg-slate-100 transition-colors"
+              title="Toggle DevTools"
+            >
+              <Bug className="w-3.5 h-3.5 text-slate-400" />
+            </button>
             <button
               onClick={handleRebuild}
               disabled={rebuilding || isLoading}
