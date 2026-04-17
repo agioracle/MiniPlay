@@ -304,7 +304,7 @@ export function ChatPanel({ initialMessages, onSend, projectPhase = 'gd' }: Chat
                 <div className="mt-1">
                   <div
                     ref={(el) => setCoderLogRef(batch.batchId, el)}
-                    className="rounded-lg bg-slate-900 text-slate-300 text-[11px] font-mono p-2.5 max-h-[160px] overflow-y-auto leading-relaxed"
+                    className="rounded-lg bg-slate-900 text-slate-300 text-[11px] font-mono p-2.5 max-h-40 overflow-y-auto leading-relaxed"
                   >
                     {batch.output.map((line, i) => (
                       <div key={i} className="whitespace-pre-wrap break-all">{line}</div>

@@ -501,6 +501,17 @@ interface AssetPreviewProps {
 function AssetPreview({ node, data, loading, onClose }: AssetPreviewProps) {
   const cat = getAssetCategory(node.name)
   const dataUrl = data ? `data:${data.mimeType};base64,${data.base64}` : null
+  const [dimensions, setDimensions] = useState<{ w: number; h: number } | null>(null)
+
+  // Reset dimensions when node changes
+  useEffect(() => {
+    setDimensions(null)
+  }, [node.path])
+
+  const handleImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
+    const img = e.currentTarget
+    setDimensions({ w: img.naturalWidth, h: img.naturalHeight })
+  }
 
   return (
     <div className="border-t border-slate-200 shrink-0">
@@ -511,6 +522,9 @@ function AssetPreview({ node, data, loading, onClose }: AssetPreviewProps) {
           <span className="text-[11px] font-medium text-slate-600 truncate">{node.name}</span>
           {node.size !== undefined && (
             <span className="text-[10px] text-slate-300 shrink-0">{formatSize(node.size)}</span>
+          )}
+          {dimensions && (
+            <span className="text-[10px] text-slate-300 shrink-0">{dimensions.w} x {dimensions.h}</span>
           )}
         </div>
         <button
@@ -537,6 +551,7 @@ function AssetPreview({ node, data, loading, onClose }: AssetPreviewProps) {
               src={dataUrl}
               alt={node.name}
               className="max-w-full max-h-48 object-contain"
+              onLoad={handleImageLoad}
             />
           </div>
         ) : cat === 'audio' ? (
