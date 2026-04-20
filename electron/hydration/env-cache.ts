@@ -51,6 +51,15 @@ export function getEnvStatus(): EnvStatus {
 }
 
 /**
+ * Look up the absolute binary path for phaser-wx from the cache.
+ * Returns 'phaser-wx' as fallback if not detected.
+ */
+export function getPhaserWxBinaryPath(): string {
+  const status = getEnvStatus();
+  return status.phaserWx.path || 'phaser-wx';
+}
+
+/**
  * Look up the absolute binary path for a coder agent from the cache.
  * Returns null if the agent was not detected or has no path.
  */

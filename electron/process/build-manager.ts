@@ -9,7 +9,7 @@ export interface BuildResult {
 }
 
 /**
- * Run `phaser-wx build --target h5` in the active project directory.
+ * Run `npm run build:h5` in the active project directory.
  * Produces dist-h5/ with the H5 preview build.
  */
 export async function runH5Build(projectPath?: string): Promise<BuildResult> {
@@ -21,7 +21,7 @@ export async function runH5Build(projectPath?: string): Promise<BuildResult> {
   const start = Date.now();
 
   try {
-    const output = execSync('npx phaser-wx build --target h5', {
+    const output = execSync('npm run build:h5', {
       cwd: dir,
       encoding: 'utf-8',
       timeout: 60000,

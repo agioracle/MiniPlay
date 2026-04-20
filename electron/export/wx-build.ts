@@ -9,7 +9,7 @@ export interface WxBuildResult {
 }
 
 /**
- * Run `phaser-wx build` (WeChat target) in the active project.
+ * Run `npm run build` (WeChat target) in the active project.
  * Produces dist-wx/ directory.
  */
 export async function runWxBuild(projectPath?: string): Promise<WxBuildResult> {
@@ -21,7 +21,7 @@ export async function runWxBuild(projectPath?: string): Promise<WxBuildResult> {
   const start = Date.now();
 
   try {
-    const output = execSync('npx phaser-wx build', {
+    const output = execSync('npm run build', {
       cwd: dir,
       encoding: 'utf-8',
       timeout: 120000,
