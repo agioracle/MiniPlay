@@ -25,16 +25,6 @@ export function RightPanel({ autoPreview = false }: { autoPreview?: boolean }) {
           Preview
         </button>
         <button
-          onClick={() => setActiveTab('gdd')}
-          className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
-            activeTab === 'gdd'
-              ? 'bg-indigo-50 text-indigo-700'
-              : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'
-          }`}
-        >
-          GD Document
-        </button>
-        <button
           onClick={() => setActiveTab('assets')}
           className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
             activeTab === 'assets'
@@ -43,6 +33,16 @@ export function RightPanel({ autoPreview = false }: { autoPreview?: boolean }) {
           }`}
         >
           Assets
+        </button>
+        <button
+          onClick={() => setActiveTab('gdd')}
+          className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+            activeTab === 'gdd'
+              ? 'bg-indigo-50 text-indigo-700'
+              : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          Game Design Document
         </button>
       </div>
 
