@@ -35,6 +35,47 @@ export function patchPath(): void {
 }
 
 /**
+ * Recover the user's full shell PATH.
+ *
+ * When a packaged Electron app is launched from Finder/Dock on macOS,
+ * process.env.PATH only contains /usr/bin:/bin:/usr/sbin:/sbin.
+ * This function runs the user's login shell to get the full PATH
+ * (including /usr/local/bin, homebrew, npm global, etc.).
+ */
+function recoverShellPath(): void {
+  if (process.platform !== 'darwin' && process.platform !== 'linux') return;
+
+  try {
+    const shell = process.env.SHELL || '/bin/zsh';
+    const { execSync: exec } = require('child_process');
+    const fullPath = exec(`${shell} -ilc 'echo $PATH'`, {
+      encoding: 'utf-8',
+      timeout: 5000,
+      stdio: 'pipe',
+    }).trim();
+
+    if (fullPath && fullPath.length > (process.env.PATH?.length || 0)) {
+      process.env.PATH = fullPath;
+    }
+  } catch {
+    // Fallback: manually add common paths
+    const sep = ':';
+    const commonPaths = [
+      '/usr/local/bin',
+      '/opt/homebrew/bin',
+      '/opt/homebrew/sbin',
+      `${process.env.HOME}/.npm-global/bin`,
+      `${process.env.HOME}/.nvm/versions/node`,
+    ];
+    const currentPath = process.env.PATH || '';
+    const missing = commonPaths.filter(p => !currentPath.includes(p));
+    if (missing.length > 0) {
+      process.env.PATH = `${missing.join(sep)}${sep}${currentPath}`;
+    }
+  }
+}
+
+/**
  * Run full hydration check & install sequence.
  *
  * Step order:
@@ -187,7 +228,10 @@ export function isHydrationComplete(): boolean {
 
 /**
  * Called at app startup to patch PATH.
+ * First recovers the user's full shell PATH (important for packaged apps),
+ * then prepends managed toolchain binaries.
  */
 export function initHydrationPath(): void {
+  recoverShellPath();
   patchPath();
 }
