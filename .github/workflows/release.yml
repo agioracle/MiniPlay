@@ -1,4 +1,4 @@
-name: Release
+name: Build and Release
 
 on:
   push:
@@ -9,8 +9,11 @@ permissions:
   contents: write
 
 jobs:
-  build-mac:
+  build-macos:
     runs-on: macos-latest
+    strategy:
+      matrix:
+        arch: [x64, arm64]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -20,6 +23,11 @@ jobs:
         with:
           node-version: 20
           cache: npm
+
+      - name: Setup Python (for node-gyp)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
 
       - name: Generate macOS icon
         run: |
@@ -36,41 +44,27 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+        env:
+          npm_config_arch: ${{ matrix.arch }}
 
-      - name: Build
+      - name: Build app
         run: npm run build
 
-      - name: Package macOS (arm64 + x64, dmg + zip)
-        run: npx electron-builder --mac dmg zip --arm64 --x64
+      - name: Package
+        run: npx electron-builder --mac --${{ matrix.arch }} --publish never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Optional: code signing
-          # CSC_LINK: ${{ secrets.MAC_CERTIFICATE }}
-          # CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
-          # APPLE_ID: ${{ secrets.APPLE_ID }}
-          # APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
-      - name: Upload macOS artifacts
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: macos
+          name: macos-${{ matrix.arch }}
           path: |
             release/*.dmg
             release/*.zip
+          if-no-files-found: error
 
-      - name: Publish to GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            release/*.dmg
-            release/*.zip
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  build-win:
+  build-windows:
     runs-on: windows-latest
     steps:
       - name: Checkout
@@ -89,25 +83,54 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build
+      - name: Build app
         run: npm run build
 
-      - name: Package Windows exe (x64)
-        run: npx electron-builder --win --x64
+      - name: Package
+        run: npx electron-builder --win --x64 --publish never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload Windows artifacts
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: windows
-          path: release/*.exe
+          name: windows-x64
+          path: |
+            release/*.exe
+          if-no-files-found: error
 
-      - name: Publish to GitHub Release
+  release:
+    needs: [build-macos, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: List artifacts
+        run: find artifacts -type f | head -50
+
+      - name: Delete existing release for this tag
+        run: |
+          gh release delete "${{ github.ref_name }}" --yes --cleanup-tag=false 2>/dev/null || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: release/*.exe
+          tag_name: ${{ github.ref_name }}
+          name: MiniPlay ${{ github.ref_name }}
           draft: false
           prerelease: false
+          generate_release_notes: true
+          files: |
+            artifacts/**/*.dmg
+            artifacts/**/*.zip
+            artifacts/**/*.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
