@@ -12,11 +12,11 @@ export interface CoderAgentDef {
   name: string;
   description: string;
 
-  /** Shell command to check version (used for detection) */
-  detectCmd: string;
+  /** Shell commands to check version, tried in priority order (first success wins) */
+  detectCmds: string[];
 
-  /** Shell command to find the binary path */
-  whichCmd: string;
+  /** Shell commands to find the binary path, matching detectCmds order */
+  whichCmds: string[];
 
   /**
    * Build the CLI invocation args for non-interactive code modification.
@@ -45,8 +45,8 @@ export const CODER_AGENTS: Record<CoderAgentId, CoderAgentDef> = {
     id: 'opencode',
     name: 'OpenCode',
     description: 'Anthropic\'s open-source AI coding agent',
-    detectCmd: 'opencode --version',
-    whichCmd: 'which opencode',
+    detectCmds: ['opencode --version'],
+    whichCmds: ['which opencode'],
     buildCommand: (prompt, binPath?, sessionId?) => [
       binPath || 'opencode', 'run',
       '--prompt', prompt,
@@ -63,8 +63,8 @@ export const CODER_AGENTS: Record<CoderAgentId, CoderAgentDef> = {
     id: 'claude-code',
     name: 'Claude Code',
     description: 'Anthropic\'s Claude Code CLI',
-    detectCmd: 'claude-internal --version',
-    whichCmd: 'which claude-internal',
+    detectCmds: ['claude --version', 'claude-internal --version'],
+    whichCmds: ['which claude', 'which claude-internal'],
     buildCommand: (prompt, binPath?, sessionId?) => [
       binPath || 'claude', '-p', prompt,
       '--output-format', 'stream-json', '--verbose',
@@ -82,8 +82,8 @@ export const CODER_AGENTS: Record<CoderAgentId, CoderAgentDef> = {
     id: 'codex',
     name: 'Codex CLI',
     description: 'OpenAI\'s Codex CLI agent',
-    detectCmd: 'codex-internal --version',
-    whichCmd: 'which codex-internal',
+    detectCmds: ['codex --version', 'codex-internal --version'],
+    whichCmds: ['which codex', 'which codex-internal'],
     buildCommand: (prompt, binPath?, sessionId?) => [
       binPath || 'codex',
       ...(sessionId ? ['exec', '--resume', sessionId] : []),
@@ -100,8 +100,8 @@ export const CODER_AGENTS: Record<CoderAgentId, CoderAgentDef> = {
     id: 'gemini-cli',
     name: 'Gemini CLI',
     description: 'Google\'s Gemini CLI agent',
-    detectCmd: 'gemini-internal --version',
-    whichCmd: 'which gemini-internal',
+    detectCmds: ['gemini --version', 'gemini-cli --version', 'gemini-internal --version'],
+    whichCmds: ['which gemini', 'which gemini-cli', 'which gemini-internal'],
     buildCommand: (prompt, binPath?, sessionId?) => [
       binPath || 'gemini', '-p', prompt,
       '--output-format', 'stream-json',

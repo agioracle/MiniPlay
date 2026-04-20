@@ -11,26 +11,30 @@ export interface CoderDetectResult extends DetectResult {
 }
 
 /**
- * Detect a single coder agent by its definition.
+ * Detect a single coder agent by trying its commands in priority order.
+ * Returns the first successful detection result.
  */
 function detectAgent(agent: CoderAgentDef): DetectResult {
-  try {
-    const raw = execSync(agent.detectCmd, {
-      encoding: 'utf-8',
-      timeout: 10000,
-      stdio: 'pipe',
-    }).trim();
-    // Some agents output multiple lines; only keep the first line
-    const version = raw.split('\n')[0].trim();
-    const agentPath = execSync(agent.whichCmd, {
-      encoding: 'utf-8',
-      timeout: 5000,
-      stdio: 'pipe',
-    }).trim();
-    return { found: true, version, path: agentPath };
-  } catch {
-    return { found: false, version: null, path: null };
+  for (let i = 0; i < agent.detectCmds.length; i++) {
+    try {
+      const raw = execSync(agent.detectCmds[i], {
+        encoding: 'utf-8',
+        timeout: 10000,
+        stdio: 'pipe',
+      }).trim();
+      // Some agents output multiple lines; only keep the first line
+      const version = raw.split('\n')[0].trim();
+      const agentPath = execSync(agent.whichCmds[i], {
+        encoding: 'utf-8',
+        timeout: 5000,
+        stdio: 'pipe',
+      }).trim();
+      return { found: true, version, path: agentPath };
+    } catch {
+      // Try next command
+    }
   }
+  return { found: false, version: null, path: null };
 }
 
 /**

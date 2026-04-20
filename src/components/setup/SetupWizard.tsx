@@ -20,17 +20,19 @@ export function SetupWizard({ onComplete }: { onComplete: () => void }) {
   const [hydrationSteps, setHydrationSteps] = useState<HydrationStepData[]>([])
   const [hydrationError, setHydrationError] = useState<string | null>(null)
   const [hydrationRunning, setHydrationRunning] = useState(false)
+  const [hydrationDone, setHydrationDone] = useState(false)
 
   const startHydration = useCallback(() => {
     if (!window.miniplay || hydrationRunning) return
     setHydrationError(null)
     setHydrationRunning(true)
     setHydrationSteps([])
+    setHydrationDone(false)
 
     window.miniplay.hydrationRun().then((success) => {
       setHydrationRunning(false)
       if (success) {
-        setTimeout(() => setStep('apikey'), 600)
+        setHydrationDone(true)
       } else {
         setHydrationError('Environment setup failed. Check the error details above and retry.')
       }
@@ -61,6 +63,14 @@ export function SetupWizard({ onComplete }: { onComplete: () => void }) {
           <h1 className="text-3xl font-serif text-slate-900">Setting up MiniPlay</h1>
           <p className="text-sm text-slate-500">Preparing your development environment...</p>
           <HydrationProgress steps={hydrationSteps} />
+          {hydrationDone && (
+            <button
+              onClick={() => setStep('apikey')}
+              className="px-8 py-2.5 text-sm font-medium rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white transition-colors"
+            >
+              Next
+            </button>
+          )}
           {hydrationError && (
             <div className="flex flex-col items-center gap-3 mt-2">
               <p className="text-sm text-red-600 max-w-md text-center">{hydrationError}</p>

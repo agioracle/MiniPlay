@@ -33,6 +33,13 @@ export default function Home() {
   const [projectPhase, setProjectPhase] = useState<ProjectPhase>('gd')
   const [settingsOpen, setSettingsOpen] = useState(false)
 
+  const loadProjects = useCallback(async () => {
+    if (window.miniplay?.projectList) {
+      const list = await window.miniplay.projectList()
+      setProjects(list)
+    }
+  }, [])
+
   useEffect(() => {
     async function init() {
       if (typeof window === 'undefined' || !window.miniplay) {
@@ -45,11 +52,7 @@ export default function Home() {
           setView('setup')
           return
         }
-        // Load project list
-        if (window.miniplay.projectList) {
-          const list = await window.miniplay.projectList()
-          setProjects(list)
-        }
+        await loadProjects()
         setView('env-check')
       } catch {
         setView('home')
@@ -164,7 +167,7 @@ export default function Home() {
   }
 
   if (view === 'setup') {
-    return <SetupWizard onComplete={() => { setView('home') }} />
+    return <SetupWizard onComplete={async () => { await loadProjects(); setView('home') }} />
   }
 
   if (view === 'env-check') {

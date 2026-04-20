@@ -12,7 +12,7 @@ export function HeroSection() {
           Mini<span className="text-indigo-600">Play</span>
         </h1>
         <p className="text-sm text-slate-600 text-center max-w-md mb-1">
-          Turn your creative ideas into WeChat Mini Games
+          Turn your ideas into WeChat Mini Games
         </p>
         <p className="text-sm text-slate-600 text-center max-w-md">
           Imagine · Create · Play · Earn
