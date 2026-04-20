@@ -48,13 +48,13 @@ export function RightPanel({ autoPreview = false }: { autoPreview?: boolean }) {
 
       {/* Content — both panels always mounted, toggle visibility via CSS */}
       <div className="flex-1 min-h-0 px-3 pb-3">
-        <div className={`h-full bg-white rounded-2xl overflow-hidden border border-slate-200 shadow-sm ${activeTab === 'preview' ? '' : 'hidden'}`}>
+        <div className={`h-full bg-white rounded-2xl overflow-hidden card-shadow ${activeTab === 'preview' ? '' : 'hidden'}`}>
           <LiveView autoPreview={autoPreview} />
         </div>
-        <div className={`h-full bg-white rounded-2xl overflow-hidden border border-slate-200 shadow-sm ${activeTab === 'gdd' ? '' : 'hidden'}`}>
+        <div className={`h-full bg-white rounded-2xl overflow-hidden card-shadow ${activeTab === 'gdd' ? '' : 'hidden'}`}>
           <GddEditor />
         </div>
-        <div className={`h-full bg-white rounded-2xl overflow-hidden border border-slate-200 shadow-sm ${activeTab === 'assets' ? '' : 'hidden'}`}>
+        <div className={`h-full bg-white rounded-2xl overflow-hidden card-shadow ${activeTab === 'assets' ? '' : 'hidden'}`}>
           <AssetsPanel />
         </div>
       </div>

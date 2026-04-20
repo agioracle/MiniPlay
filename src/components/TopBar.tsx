@@ -64,7 +64,7 @@ export function TopBar({ onBack }: { onBack?: () => void }) {
         <button
           onClick={() => setExportOpen(true)}
           disabled={exporting}
-          className="px-3 py-1.5 text-xs font-medium rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white shadow-sm transition-colors flex items-center gap-1.5"
+          className="px-3 py-1.5 text-xs font-medium rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white transition-colors flex items-center gap-1.5"
           style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
         >
           {exporting ? (

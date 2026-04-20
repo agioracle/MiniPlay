@@ -6,9 +6,9 @@ const RIPPLES = [0, 1, 2, 3]
 
 export function HeroSection() {
   return (
-    <div className="relative overflow-hidden rounded-2xl bg-linear-to-br from-indigo-50 via-white to-violet-50 border border-slate-200 mb-8">
+    <div className="relative overflow-hidden rounded-2xl bg-linear-to-br from-orange-50 via-white to-rose-50 card-shadow mb-8">
       <div className="relative z-10 flex flex-col items-center justify-center py-14 px-6">
-        <h1 className="text-3xl font-bold tracking-tight text-slate-900 mb-2">
+        <h1 className="text-4xl font-serif tracking-tight text-slate-900 mb-2">
           Mini<span className="text-indigo-600">Play</span>
         </h1>
         <p className="text-sm text-slate-600 text-center max-w-md mb-1">

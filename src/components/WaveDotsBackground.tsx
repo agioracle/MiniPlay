@@ -3,16 +3,16 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 
 const MACARON_COLORS = [
-  '#FFB5C2', // pink
-  '#B5DEFF', // blue
-  '#C3B1E1', // lavender
+  '#E85D3A', // coral-red (accent)
+  '#F29578', // soft coral
+  '#D4C9BC', // warm stone
   '#FFDAB9', // peach
-  '#B5EAD7', // mint
-  '#FFE5B4', // cream
-  '#E8D5B7', // tan
+  '#C9A88A', // tan
+  '#E8D5B7', // sand
   '#F0C5D0', // rose
-  '#A7D8DE', // aqua
-  '#D4A5E5', // lilac
+  '#B8ADA2', // warm gray
+  '#D4912A', // warm amber
+  '#A83D24', // deep terracotta
 ]
 
 export function WaveDotsBackground() {

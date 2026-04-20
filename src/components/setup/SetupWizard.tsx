@@ -55,10 +55,10 @@ export function SetupWizard({ onComplete }: { onComplete: () => void }) {
 
   if (step === 'hydration') {
     return (
-      <div className="relative h-screen overflow-hidden bg-[#FAFAF8]">
+      <div className="relative h-screen overflow-hidden bg-slate-50">
         <WaveDotsBackground />
         <div className="relative z-10 flex flex-col items-center justify-center h-full gap-8">
-          <h1 className="text-2xl font-semibold text-slate-900">Setting up MiniPlay</h1>
+          <h1 className="text-3xl font-serif text-slate-900">Setting up MiniPlay</h1>
           <p className="text-sm text-slate-500">Preparing your development environment...</p>
           <HydrationProgress steps={hydrationSteps} />
           {hydrationError && (
@@ -67,7 +67,7 @@ export function SetupWizard({ onComplete }: { onComplete: () => void }) {
               <button
                 onClick={startHydration}
                 disabled={hydrationRunning}
-                className="px-4 py-2 text-sm font-medium rounded-lg bg-white/80 backdrop-blur-sm hover:bg-white text-slate-700 transition-colors disabled:opacity-50 shadow-sm"
+                className="px-4 py-2 text-sm font-medium rounded-lg bg-white/80 backdrop-blur-sm hover:bg-white text-slate-700 transition-colors disabled:opacity-50"
               >
                 {hydrationRunning ? 'Retrying...' : 'Retry'}
               </button>
@@ -80,10 +80,10 @@ export function SetupWizard({ onComplete }: { onComplete: () => void }) {
 
   if (step === 'apikey') {
     return (
-      <div className="relative h-screen overflow-hidden bg-[#FAFAF8]">
+      <div className="relative h-screen overflow-hidden bg-slate-50">
         <WaveDotsBackground />
         <div className="relative z-10 flex flex-col items-center justify-center h-full gap-8">
-          <h1 className="text-2xl font-semibold text-slate-900">Almost there!</h1>
+          <h1 className="text-3xl font-serif text-slate-900">Almost there!</h1>
           <p className="text-sm text-slate-500 max-w-md text-center">
             MiniPlay uses AI to generate games. Enter your API key to get started.
             Your key stays on your machine — it never leaves this device.
@@ -96,7 +96,7 @@ export function SetupWizard({ onComplete }: { onComplete: () => void }) {
 
   // step === 'ready'
   return (
-    <div className="relative h-screen overflow-hidden bg-[#FAFAF8]">
+    <div className="relative h-screen overflow-hidden bg-slate-50">
       <WaveDotsBackground />
       <div className="relative z-10 flex flex-col items-center justify-center h-full gap-6">
         <div className="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center">
@@ -104,11 +104,11 @@ export function SetupWizard({ onComplete }: { onComplete: () => void }) {
             <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
           </svg>
         </div>
-        <h1 className="text-2xl font-semibold text-slate-900">Ready to go!</h1>
+        <h1 className="text-3xl font-serif text-slate-900">Ready to go!</h1>
         <p className="text-sm text-slate-500">Your environment is set up. Let's create some games.</p>
         <button
           onClick={onComplete}
-          className="mt-4 px-8 py-2.5 text-sm font-medium rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white transition-colors shadow-lg shadow-indigo-200"
+          className="mt-4 px-8 py-2.5 text-sm font-medium rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white transition-colors"
         >
           Get Started
         </button>

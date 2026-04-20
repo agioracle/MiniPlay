@@ -24,7 +24,7 @@ export function ProjectCard({
     <div className="relative group">
       <button
         onClick={onClick}
-        className="w-full text-left p-4 rounded-xl border border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50 shadow-sm hover:shadow-md transition-all"
+        className="w-full text-left p-4 rounded-xl bg-white hover:bg-slate-50 transition-all card-shadow"
       >
         {/* Thumbnail placeholder */}
         <div className="w-full aspect-[16/9] rounded-lg bg-slate-100 mb-3 flex items-center justify-center overflow-hidden">

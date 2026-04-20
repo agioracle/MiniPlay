@@ -45,8 +45,8 @@ export function ExportDialog({ open, onClose, onExport, exporting }: ExportDialo
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/30" onClick={exporting ? undefined : onClose} />
 
-      <div className="relative bg-white border border-slate-200 rounded-2xl p-6 w-[440px] shadow-xl">
-        <h2 className="text-lg font-semibold text-slate-900 mb-1">Export WeChat Mini-Game</h2>
+      <div className="relative bg-white rounded-2xl p-6 w-[440px] card-shadow">
+        <h2 className="text-xl font-serif text-slate-900 mb-1">Export WeChat Mini-Game</h2>
         <p className="text-xs text-slate-400 mb-5">Configure export settings before packaging</p>
 
         {loading ? (

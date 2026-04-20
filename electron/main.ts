@@ -1,5 +1,6 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, nativeImage } from 'electron';
 import * as path from 'path';
+import * as fs from 'fs';
 import { registerEchoHandler } from './ipc/echo';
 import { registerHydrationHandlers } from './ipc/hydration';
 import { registerConfigHandlers } from './ipc/config';
@@ -18,17 +19,37 @@ import { runEnvDetection } from './hydration/env-cache';
 let mainWindow: BrowserWindow | null = null;
 
 const isDev = !app.isPackaged;
+const APP_NAME = 'MiniPlay';
+const APP_VERSION = require('../package.json').version;
+
+// Set app name for macOS menu bar
+app.setName(APP_NAME);
 
 function createWindow() {
+  const iconPath = path.join(__dirname, '..', 'build', 'icon.png');
+
+  // Set About panel options — use nativeImage for icon on macOS
+  const aboutOptions: Electron.AboutPanelOptionsOptions = {
+    applicationName: APP_NAME,
+    applicationVersion: APP_VERSION,
+    version: '',
+    copyright: 'AI-powered WeChat Mini-Game Generator\nImagine · Create · Play · Earn',
+  };
+  if (fs.existsSync(iconPath)) {
+    aboutOptions.iconPath = iconPath;
+  }
+  app.setAboutPanelOptions(aboutOptions);
+
   mainWindow = new BrowserWindow({
     width: 1440,
     height: 900,
     minWidth: 1024,
     minHeight: 680,
-    title: 'MiniPlay',
+    title: APP_NAME,
+    icon: iconPath,
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 16, y: 16 },
-    backgroundColor: '#f8fafc',
+    backgroundColor: '#F5EDE3',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,

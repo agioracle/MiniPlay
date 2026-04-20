@@ -1,1 +1,70 @@
 @import "tailwindcss";
+
+@theme {
+  /* Fonts */
+  --font-sans: 'DM Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-serif: 'DM Serif Display', ui-serif, Georgia, serif;
+  /* Warm cream backgrounds — replaces cold slate grays */
+  --color-slate-50: #F5EDE3;
+  --color-slate-100: #EDE4D8;
+  --color-slate-200: #D4C9BC;
+  --color-slate-300: #B8ADA2;
+  --color-slate-400: #8A8078;
+  --color-slate-500: #7A7068;
+  --color-slate-600: #5A524A;
+  --color-slate-700: #3D3832;
+  --color-slate-800: #2D2D2D;
+  --color-slate-900: #1A1A1A;
+
+  /* Coral-red accent — replaces indigo */
+  --color-indigo-50: #FEF0EC;
+  --color-indigo-100: #FDE0D8;
+  --color-indigo-200: #F9BAA8;
+  --color-indigo-300: #F29578;
+  --color-indigo-400: #EC7050;
+  --color-indigo-500: #E85D3A;
+  --color-indigo-600: #E85D3A;
+  --color-indigo-700: #D14E2E;
+  --color-indigo-800: #A83D24;
+  --color-indigo-900: #7F2E1B;
+
+  /* Align violet accent with coral */
+  --color-violet-500: #E85D3A;
+
+  /* Warm success greens */
+  --color-emerald-50: #EEF7F1;
+  --color-emerald-100: #D4EDDB;
+  --color-emerald-500: #4A9D6E;
+  --color-emerald-600: #3D8A5E;
+
+  /* Warm amber warnings */
+  --color-amber-50: #FEF6E8;
+  --color-amber-100: #FDECC8;
+  --color-amber-200: #F9DCA0;
+  --color-amber-500: #D4912A;
+  --color-amber-600: #B87A1F;
+  --color-amber-700: #956218;
+
+  /* Warm red errors */
+  --color-red-50: #FEF0EE;
+  --color-red-100: #FDE0DB;
+  --color-red-200: #F9BAB0;
+  --color-red-400: #D45A4A;
+  --color-red-500: #C94040;
+  --color-red-600: #B03535;
+  --color-red-700: #8F2B2B;
+}
+
+body {
+  background-color: #F5EDE3;
+}
+
+/* Neo-brutalist offset shadow for cards */
+.card-shadow {
+  border: 1.5px solid #2D2D2D;
+  box-shadow: 4px 4px 0px #2D2D2D;
+}
+.card-shadow-sm {
+  border: 1.5px solid #2D2D2D;
+  box-shadow: 3px 3px 0px #2D2D2D;
+}

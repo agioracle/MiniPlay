@@ -48,13 +48,13 @@ export function EnvCheckScreen({ onContinue }: { onContinue: () => void }) {
   const installedCoders = env?.coderAgents?.filter(a => a.found) ?? []
 
   return (
-    <div className="relative h-screen overflow-hidden bg-[#FAFAF8]">
+    <div className="relative h-screen overflow-hidden bg-slate-50">
       {/* Animated wave dots background */}
       <WaveDotsBackground />
 
       {/* Content */}
       <div className="relative z-10 flex flex-col items-center justify-center h-full gap-6">
-        <h1 className="text-2xl font-semibold text-slate-900">MiniPlay</h1>
+        <h1 className="text-3xl font-serif text-slate-900">MiniPlay</h1>
         <p className="text-sm text-slate-500">Environment check</p>
 
         {loading ? (
@@ -65,7 +65,7 @@ export function EnvCheckScreen({ onContinue }: { onContinue: () => void }) {
         ) : env ? (
           <div className="w-[360px] space-y-4">
             {/* Node.js */}
-            <div className="flex items-center gap-3 px-4 py-3 bg-white/80 backdrop-blur-sm rounded-xl border border-white/60 shadow-sm">
+            <div className="flex items-center gap-3 px-4 py-3 bg-white/80 backdrop-blur-sm rounded-xl card-shadow-sm">
               <StatusDot ok={!!env.node?.found} />
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-medium text-slate-800">Node.js</div>
@@ -76,7 +76,7 @@ export function EnvCheckScreen({ onContinue }: { onContinue: () => void }) {
             </div>
 
             {/* phaser-wx */}
-            <div className="flex items-center gap-3 px-4 py-3 bg-white/80 backdrop-blur-sm rounded-xl border border-white/60 shadow-sm">
+            <div className="flex items-center gap-3 px-4 py-3 bg-white/80 backdrop-blur-sm rounded-xl card-shadow-sm">
               <StatusDot ok={!!env.phaserWx?.found} />
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-medium text-slate-800">phaser-wx Toolchain</div>
@@ -87,7 +87,7 @@ export function EnvCheckScreen({ onContinue }: { onContinue: () => void }) {
             </div>
 
             {/* Coder Agents */}
-            <div className="px-4 py-3 bg-white/80 backdrop-blur-sm rounded-xl border border-white/60 shadow-sm">
+            <div className="px-4 py-3 bg-white/80 backdrop-blur-sm rounded-xl card-shadow-sm">
               <div className="text-sm font-medium text-slate-800 mb-2">Coder Agents</div>
               <div className="space-y-1.5">
                 {env.coderAgents?.map((agent) => (
@@ -120,7 +120,7 @@ export function EnvCheckScreen({ onContinue }: { onContinue: () => void }) {
         <button
           onClick={onContinue}
           disabled={loading || !!hasErrors}
-          className="mt-2 px-8 py-2.5 text-sm font-medium rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors shadow-lg shadow-indigo-200"
+          className="mt-2 px-8 py-2.5 text-sm font-medium rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors"
         >
           Get Started
         </button>

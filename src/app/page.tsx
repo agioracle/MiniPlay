@@ -173,10 +173,10 @@ export default function Home() {
 
   if (view === 'home') {
     return (
-      <div className="relative flex flex-col h-screen bg-[#FAFAF8]">
+      <div className="relative flex flex-col h-screen bg-slate-50">
         <WaveDotsBackground />
         <header
-          className="relative z-10 flex items-center justify-between h-12 px-4 border-b border-slate-200/60 bg-white/60 backdrop-blur-sm"
+          className="relative z-10 flex items-center justify-between h-12 px-4 border-b border-slate-200 bg-white/60 backdrop-blur-sm"
           style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
         >
           <div className="w-20 shrink-0" />
@@ -197,7 +197,7 @@ export default function Home() {
         <main className="relative z-10 flex-1 overflow-y-auto p-8">
           <div className="max-w-3xl mx-auto">
             <HeroSection />
-            <h2 className="text-xl font-semibold text-slate-900 mb-6">Your Games</h2>
+            <h2 className="text-2xl font-serif text-slate-900 mb-6">Your Games</h2>
 
             <div className="grid grid-cols-3 gap-4">
               {/* New Game card */}
@@ -241,10 +241,10 @@ export default function Home() {
             <div className="absolute inset-0 bg-black/30" />
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
               <div
-                className="pointer-events-auto bg-white border border-slate-200 rounded-2xl p-6 w-[360px] shadow-xl"
+                className="pointer-events-auto bg-white rounded-2xl p-6 w-[360px] card-shadow"
                 onClick={e => e.stopPropagation()}
               >
-                <h3 className="text-base font-semibold text-slate-900 mb-2">Delete Project</h3>
+                <h3 className="text-lg font-serif text-slate-900 mb-2">Delete Project</h3>
                 <p className="text-sm text-slate-600 mb-1">
                   Are you sure you want to delete <span className="font-medium">&quot;{deleteConfirm.name}&quot;</span>?
                 </p>
