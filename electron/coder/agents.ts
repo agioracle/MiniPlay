@@ -55,7 +55,7 @@ export const CODER_AGENTS: Record<CoderAgentId, CoderAgentDef> = {
     ],
     jsonOutput: true,
     env: { CI: 'true' },
-    installInstructions: 'npm install -g opencode-ai',
+    installInstructions: 'npm i -g opencode-ai',
     installUrl: 'https://opencode.ai',
   },
 
@@ -74,7 +74,7 @@ export const CODER_AGENTS: Record<CoderAgentId, CoderAgentDef> = {
     ],
     jsonOutput: true,
     env: { CI: 'true' },
-    installInstructions: 'npm install -g @anthropic-ai/claude-code',
+    installInstructions: 'curl -fsSL https://claude.ai/install.sh | bash',
     installUrl: 'https://docs.anthropic.com/en/docs/claude-code',
   },
 
@@ -110,7 +110,7 @@ export const CODER_AGENTS: Record<CoderAgentId, CoderAgentDef> = {
     ],
     jsonOutput: true,
     env: {},
-    installInstructions: 'npm install -g @anthropic-ai/gemini-cli\n(or visit the URL below)',
+    installInstructions: 'npm install -g @google/gemini-cli',
     installUrl: 'https://github.com/google-gemini/gemini-cli',
   },
 };
