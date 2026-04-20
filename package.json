@@ -2,6 +2,7 @@
   "name": "miniplay-native",
   "version": "0.1.0",
   "private": true,
+  "author": "MiniPlay Team",
   "description": "MiniPlay Native - AI-powered WeChat mini-game generator",
   "main": "dist-electron/main.js",
   "scripts": {
@@ -54,7 +55,6 @@
     ],
     "mac": {
       "target": "dmg",
-      "icon": "build/icon.icns",
       "category": "public.app-category.developer-tools",
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
@@ -70,15 +70,11 @@
       ]
     },
     "win": {
-      "target": "nsis",
-      "icon": "build/icon.ico"
+      "target": "nsis"
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "installerIcon": "build/icon.ico",
-      "uninstallerIcon": "build/icon.ico",
-      "installerHeaderIcon": "build/icon.ico"
+      "allowToChangeInstallationDirectory": true
     }
   }
 }

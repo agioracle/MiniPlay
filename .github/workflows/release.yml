@@ -21,6 +21,19 @@ jobs:
           node-version: 20
           cache: npm
 
+      - name: Generate macOS icon
+        run: |
+          mkdir -p /tmp/icon.iconset
+          for size in 16 32 128 256 512; do
+            sips -z $size $size build/icon.png --out /tmp/icon.iconset/icon_${size}x${size}.png
+          done
+          sips -z 32 32 build/icon.png --out /tmp/icon.iconset/icon_16x16@2x.png
+          sips -z 64 64 build/icon.png --out /tmp/icon.iconset/icon_32x32@2x.png
+          sips -z 256 256 build/icon.png --out /tmp/icon.iconset/icon_128x128@2x.png
+          sips -z 512 512 build/icon.png --out /tmp/icon.iconset/icon_256x256@2x.png
+          sips -z 1024 1024 build/icon.png --out /tmp/icon.iconset/icon_512x512@2x.png
+          iconutil -c icns /tmp/icon.iconset -o build/icon.icns
+
       - name: Install dependencies
         run: npm ci
 
@@ -64,6 +77,10 @@ jobs:
         with:
           node-version: 20
           cache: npm
+
+      - name: Generate Windows icon
+        run: npx png-to-ico build/icon.png > build/icon.ico
+        shell: bash
 
       - name: Install dependencies
         run: npm ci
