@@ -2,6 +2,7 @@ import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { TOOLCHAIN_DIR, ensureDir } from '../storage/paths';
+import { getManagedNodeBinDir } from './install-node';
 
 // PRD §7.2 specifies this exact URL
 const REPO_URL = 'https://github.com/agioracle/phaserjs-webgl-transform.git';
@@ -25,8 +26,43 @@ function ensurePnpm(): void {
 }
 
 /**
+ * Link the phaser-wx CLI binary into a directory that's already on PATH.
+ * Avoids `npm link` which requires write access to /usr/local/lib/node_modules.
+ *
+ * Strategy:
+ * 1. Try managed node bin dir (~/Library/Application Support/MiniPlay/node/bin/)
+ * 2. Fallback to ~/.miniplay/bin/
+ */
+function linkPhaserWxBin(cliDir: string): void {
+  const cliPkg = JSON.parse(fs.readFileSync(path.join(cliDir, 'package.json'), 'utf-8'));
+  const binEntries = cliPkg.bin || {};
+
+  // Determine target bin directory
+  let binDir = getManagedNodeBinDir();
+  if (!binDir) {
+    // Fallback: create a bin dir under toolchain
+    binDir = path.join(TOOLCHAIN_DIR, 'bin');
+  }
+  ensureDir(binDir);
+
+  for (const [name, relPath] of Object.entries(binEntries)) {
+    const target = path.resolve(cliDir, relPath as string);
+    const link = path.join(binDir, name);
+
+    // Remove existing link/file
+    try { fs.unlinkSync(link); } catch {}
+
+    // Create symlink
+    fs.symlinkSync(target, link);
+
+    // Ensure executable
+    try { fs.chmodSync(target, 0o755); } catch {}
+  }
+}
+
+/**
  * Clone and build the phaserjs-webgl-transform toolchain.
- * Links phaser-wx CLI globally so it's available on PATH.
+ * Links phaser-wx CLI into the managed bin dir so it's available on PATH.
  *
  * The project is a pnpm monorepo with 3 packages:
  *   @aspect/adapter, @aspect/rollup-plugin, @aspect/cli
@@ -77,17 +113,10 @@ export async function installPhaserWx(onProgress?: (detail: string) => void): Pr
     env: { ...process.env },
   });
 
-  // Step 5: Link CLI globally so `phaser-wx` is on PATH
+  // Step 5: Link CLI binary into managed bin dir (no sudo required)
   onProgress?.('Linking phaser-wx CLI...');
   const cliDir = path.join(repoDir, 'packages', 'cli');
-
-  // Use npm link (works regardless of whether user's global is npm or pnpm)
-  execSync('npm link', {
-    cwd: cliDir,
-    timeout: 30000,
-    stdio: 'pipe',
-    env: { ...process.env },
-  });
+  linkPhaserWxBin(cliDir);
 
   // Verify the CLI is accessible
   try {
@@ -98,7 +127,7 @@ export async function installPhaserWx(onProgress?: (detail: string) => void): Pr
     }).trim();
     onProgress?.(`phaser-wx ${version} ready`);
   } catch {
-    // Link might not be on PATH yet — verify via direct node execution
+    // Verify via direct file existence
     const cliDist = path.join(cliDir, 'dist', 'index.cjs');
     if (fs.existsSync(cliDist)) {
       onProgress?.('phaser-wx built (linked)');

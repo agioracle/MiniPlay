@@ -7,7 +7,8 @@ import { installPhaserWx } from './install-phaser-wx';
 import { readConfig, writeConfig } from '../storage/config';
 import { CODER_AGENTS, CODER_AGENT_PRIORITY } from '../coder/agents';
 import type { CoderAgentId } from '../coder/agents';
-import { ensureMiniPlayHome } from '../storage/paths';
+import { ensureMiniPlayHome, TOOLCHAIN_DIR } from '../storage/paths';
+import * as path from 'path';
 
 export interface HydrationStep {
   id: string;
@@ -27,10 +28,15 @@ function send(win: BrowserWindow, steps: HydrationStep[]) {
  * Safe to call multiple times — only prepends if not already present.
  */
 export function patchPath(): void {
+  const sep = process.platform === 'win32' ? ';' : ':';
   const managedBin = getManagedNodeBinDir();
   if (managedBin && !process.env.PATH?.includes(managedBin)) {
-    const sep = process.platform === 'win32' ? ';' : ':';
     process.env.PATH = `${managedBin}${sep}${process.env.PATH}`;
+  }
+  // Also add toolchain bin dir (where phaser-wx may be symlinked)
+  const toolchainBin = path.join(TOOLCHAIN_DIR, 'bin');
+  if (!process.env.PATH?.includes(toolchainBin)) {
+    process.env.PATH = `${toolchainBin}${sep}${process.env.PATH}`;
   }
 }
 
