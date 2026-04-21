@@ -141,7 +141,7 @@ MiniPlay/
 - **Next.js** (SSG) — Renderer UI framework
 - **Tailwind CSS v4** — Styling with custom warm theme
 - **Vercel AI SDK v6** — LLM streaming and tool calling
-- **Phaser 3** — Game engine (via phaserjs-webgl-transform toolchain)
+- **Phaser 3** — Game engine (via [phaserjs-webgl-transform](https://github.com/agioracle/phaserjs-webgl-transform) toolchain)
 - **Motion** — Animations (wave dots background, hero section)
 
 ## Release
