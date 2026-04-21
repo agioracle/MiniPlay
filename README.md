@@ -72,12 +72,12 @@ Download the latest release for your platform from the [Releases](https://github
 
 MiniPlay requires at least one Code Agent CLI installed on your system:
 
-| Agent | Install |
-|-------|---------|
-| **Claude Code** (recommended) | `curl -fsSL https://claude.ai/install.sh | bash` |
-| **Codex** | `npm install -g @openai/codex` |
-| **Gemini CLI** | `npm install -g @google/gemini-cli` |
-| **OpenCode** | `npm i -g opencode-ai` |
+| Agent | Install | Instructions |
+|-------|---------|--------------|
+| **Claude Code** (recommended) | `curl -fsSL https://claude.ai/install.sh \| bash` | https://docs.anthropic.com/en/docs/claude-code |
+| **Codex** | `npm install -g @openai/codex` |  https://github.com/openai/codex |
+| **Gemini CLI** | `npm install -g @google/gemini-cli` | https://github.com/google-gemini/gemini-cli |
+| **OpenCode** | `npm i -g opencode-ai` | https://opencode.ai |
 
 Node.js (>= 18) and the phaser-wx toolchain are automatically installed by MiniPlay if not present.
 
