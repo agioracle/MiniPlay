@@ -245,10 +245,17 @@ export async function runHydration(win: BrowserWindow): Promise<boolean> {
   updateStep(1, { status: 'checking' });
 
   const phaserWxResult = detectPhaserWx();
-  if (phaserWxResult.found) {
+  if (phaserWxResult.toolchainReady) {
+    // Toolchain directory is complete — CLI built + templates present
     updateStep(1, { status: 'done', detail: `${phaserWxResult.version}` });
   } else {
-    updateStep(1, { status: 'installing', detail: 'Setting up phaser-wx toolchain...' });
+    // Toolchain directory is NOT ready.
+    // Even if a system-wide phaser-wx exists (found=true), we still need
+    // to set up the managed toolchain directory so that templates are available.
+    const hint = phaserWxResult.found
+      ? 'System phaser-wx detected, setting up managed toolchain...'
+      : 'Setting up phaser-wx toolchain...';
+    updateStep(1, { status: 'installing', detail: hint });
     try {
       await installPhaserWx((detail) => updateStep(1, { detail }));
       updateStep(1, { status: 'done', detail: 'Built & linked' });

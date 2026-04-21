@@ -126,33 +126,37 @@ export function LiveView({ autoPreview = false }: { autoPreview?: boolean }) {
         <span className="text-[11px] font-medium text-slate-500 truncate pl-1">
           {projectName || ''}
         </span>
-        {(previewUrl || isError) && (
-          <div className="flex items-center gap-1">
-            <button
-              onClick={handleToggleDevtools}
-              className="p-1 rounded hover:bg-slate-100 transition-colors"
-              title="Toggle DevTools"
-            >
-              <Bug className="w-3.5 h-3.5 text-slate-400" />
-            </button>
-            <button
-              onClick={handleRebuild}
-              disabled={rebuilding || isLoading}
-              className="p-1 rounded hover:bg-slate-100 disabled:opacity-30 transition-colors"
-              title="Rebuild from source"
-            >
-              <Hammer className={`w-3.5 h-3.5 text-slate-400 ${rebuilding ? 'animate-bounce' : ''}`} />
-            </button>
-            <button
-              onClick={handleRefresh}
-              disabled={refreshing || isLoading}
-              className="p-1 rounded hover:bg-slate-100 disabled:opacity-30 transition-colors"
-              title="Reload preview"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 text-slate-400 ${refreshing ? 'animate-spin' : ''}`} />
-            </button>
-          </div>
-        )}
+        <div className="flex items-center gap-1">
+          {/* DevTools toggle — always visible so users can inspect console logs */}
+          <button
+            onClick={handleToggleDevtools}
+            className="p-1 rounded hover:bg-slate-100 transition-colors"
+            title="Toggle DevTools"
+          >
+            <Bug className="w-3.5 h-3.5 text-slate-400" />
+          </button>
+          {/* Rebuild & Refresh — only shown when preview is loaded or errored */}
+          {(previewUrl || isError) && (
+            <>
+              <button
+                onClick={handleRebuild}
+                disabled={rebuilding || isLoading}
+                className="p-1 rounded hover:bg-slate-100 disabled:opacity-30 transition-colors"
+                title="Rebuild from source"
+              >
+                <Hammer className={`w-3.5 h-3.5 text-slate-400 ${rebuilding ? 'animate-bounce' : ''}`} />
+              </button>
+              <button
+                onClick={handleRefresh}
+                disabled={refreshing || isLoading}
+                className="p-1 rounded hover:bg-slate-100 disabled:opacity-30 transition-colors"
+                title="Reload preview"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 text-slate-400 ${refreshing ? 'animate-spin' : ''}`} />
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Preview content */}

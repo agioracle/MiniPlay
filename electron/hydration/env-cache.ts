@@ -1,12 +1,15 @@
 import { detectNode, type DetectResult } from './detect-node';
-import { detectPhaserWx } from './detect-phaser-wx';
+import { detectPhaserWx, type PhaserWxDetectResult } from './detect-phaser-wx';
 import { detectAllCoders, type CoderDetectResult } from './detect-coder';
 import type { CoderAgentId } from '../coder/agents';
 import { readConfig } from '../storage/config';
+import { TOOLCHAIN_DIR } from '../storage/paths';
+import * as path from 'path';
+import * as fs from 'fs';
 
 export interface EnvStatus {
   node: DetectResult;
-  phaserWx: DetectResult;
+  phaserWx: PhaserWxDetectResult;
   coderAgents: CoderDetectResult[];
   detectedAt: string;
 }
@@ -52,10 +55,31 @@ export function getEnvStatus(): EnvStatus {
 }
 
 /**
- * Look up the absolute binary path for phaser-wx from the cache.
- * Returns 'phaser-wx' as fallback if not detected.
+ * Look up the absolute binary path for phaser-wx.
+ *
+ * Priority:
+ *   1. Toolchain CLI dist (TOOLCHAIN_DIR/phaserjs-webgl-transform/packages/cli/dist/index.cjs)
+ *   2. Cached detection result path
+ *   3. Fallback: 'phaser-wx' (system PATH)
+ *
+ * This ensures we always prefer the managed toolchain copy, which is
+ * guaranteed to sit alongside the template directories.
  */
 export function getPhaserWxBinaryPath(): string {
+  // Always prefer the managed toolchain CLI dist
+  const toolchainCli = path.join(
+    TOOLCHAIN_DIR,
+    'phaserjs-webgl-transform',
+    'packages',
+    'cli',
+    'dist',
+    'index.cjs',
+  );
+  if (fs.existsSync(toolchainCli)) {
+    return toolchainCli;
+  }
+
+  // Fallback to whatever detect found (may be system-wide)
   const status = getEnvStatus();
   return status.phaserWx.path || 'phaser-wx';
 }
