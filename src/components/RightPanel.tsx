@@ -52,10 +52,10 @@ export function RightPanel({ autoPreview = false }: { autoPreview?: boolean }) {
           <LiveView autoPreview={autoPreview} />
         </div>
         <div className={`h-full bg-white rounded-2xl overflow-hidden card-shadow ${activeTab === 'gdd' ? '' : 'hidden'}`}>
-          <GddEditor />
+          <GddEditor visible={activeTab === 'gdd'} />
         </div>
         <div className={`h-full bg-white rounded-2xl overflow-hidden card-shadow ${activeTab === 'assets' ? '' : 'hidden'}`}>
-          <AssetsPanel />
+          <AssetsPanel visible={activeTab === 'assets'} />
         </div>
       </div>
     </div>

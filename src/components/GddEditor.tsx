@@ -2,15 +2,14 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 
-export function GddEditor() {
+export function GddEditor({ visible }: { visible?: boolean }) {
   const [content, setContent] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [dirty, setDirty] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-  // Load GDD on mount
-  useEffect(() => {
+  const loadGdd = useCallback(() => {
     if (!window.miniplay?.gddRead) {
       setLoading(false)
       return
@@ -20,6 +19,18 @@ export function GddEditor() {
       setLoading(false)
     }).catch(() => setLoading(false))
   }, [])
+
+  // Load GDD on mount
+  useEffect(() => {
+    loadGdd()
+  }, [loadGdd])
+
+  // Reload when tab becomes visible (if no unsaved changes)
+  useEffect(() => {
+    if (visible && !dirty) {
+      loadGdd()
+    }
+  }, [visible, dirty, loadGdd])
 
   const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setContent(e.target.value)

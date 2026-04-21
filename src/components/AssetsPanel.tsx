@@ -363,7 +363,7 @@ function TreeNode({ node, depth, onRefresh, onError, draggedFile, setDraggedFile
 /*  AssetsPanel                                                       */
 /* ------------------------------------------------------------------ */
 
-export function AssetsPanel() {
+export function AssetsPanel({ visible }: { visible?: boolean }) {
   const [tree, setTree] = useState<AssetNode[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -417,6 +417,11 @@ export function AssetsPanel() {
   useEffect(() => {
     loadTree()
   }, [loadTree])
+
+  // Reload when tab becomes visible
+  useEffect(() => {
+    if (visible) loadTree()
+  }, [visible, loadTree])
 
   const totalFiles = countFiles(tree)
 
