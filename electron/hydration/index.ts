@@ -8,7 +8,9 @@ import { readConfig, writeConfig } from '../storage/config';
 import { CODER_AGENTS, CODER_AGENT_PRIORITY } from '../coder/agents';
 import type { CoderAgentId } from '../coder/agents';
 import { ensureMiniPlayHome, TOOLCHAIN_DIR } from '../storage/paths';
+import { resolveNvmBinDir, stripAnsi } from './nvm-utils';
 import * as path from 'path';
+import * as fs from 'fs';
 
 export interface HydrationStep {
   id: string;
@@ -41,73 +43,153 @@ export function patchPath(): void {
 }
 
 /**
+ * Determine a POSIX-compatible shell for PATH recovery.
+ * If the user's default shell is non-POSIX (Fish, Nushell, etc.),
+ * fall back to /bin/zsh or /bin/bash. (Borrowed from fix-path.)
+ */
+function resolveShell(): string {
+  const shell = process.env.SHELL || '/bin/zsh';
+  const basename = path.basename(shell);
+
+  // Non-POSIX shells don't support -ilc flags
+  const nonPosixShells = ['fish', 'nu', 'nushell', 'elvish', 'xonsh'];
+  if (nonPosixShells.includes(basename)) {
+    console.log(`[PATH] Default shell '${basename}' is non-POSIX, falling back`);
+    if (fs.existsSync('/bin/zsh')) return '/bin/zsh';
+    if (fs.existsSync('/bin/bash')) return '/bin/bash';
+  }
+  return shell;
+}
+
+/**
+ * Build env for sub-shell execution.
+ * Injects oh-my-zsh anti-blocking vars (borrowed from fix-path)
+ * and ensures NVM_DIR is set.
+ */
+function buildShellEnv(): Record<string, string | undefined> {
+  const home = process.env.HOME || require('os').homedir();
+  return {
+    ...process.env,
+    HOME: home,
+    // Ensure NVM_DIR is set so explicit source works
+    NVM_DIR: process.env.NVM_DIR || path.join(home, '.nvm'),
+    // oh-my-zsh anti-blocking (borrowed from fix-path)
+    DISABLE_AUTO_UPDATE: 'true',
+    ZSH_TMUX_AUTOSTART: 'false',
+  };
+}
+
+/**
  * Recover the user's full shell PATH.
  *
  * When a packaged Electron app is launched from Finder/Dock on macOS,
  * process.env.PATH only contains /usr/bin:/bin:/usr/sbin:/sbin.
  * This function runs the user's login shell to get the full PATH
  * (including /usr/local/bin, homebrew, nvm, npm global, etc.).
+ *
+ * Multi-level recovery strategy:
+ *   1. Interactive shell + explicit `source nvm` + `command env` to get PATH
+ *   2. Fallback: login shell `-lc` (simpler, no interactive)
+ *   3. Ultimate fallback: manually assemble common paths + dynamic nvm bin dir
  */
 function recoverShellPath(): void {
   if (process.platform !== 'darwin' && process.platform !== 'linux') return;
 
-  try {
-    const shell = process.env.SHELL || '/bin/zsh';
-    const { execSync: exec } = require('child_process');
+  const shell = resolveShell();
+  const shellEnv = buildShellEnv();
+  const { execSync: exec } = require('child_process');
 
-    // Use a unique marker to extract PATH reliably from shell output.
-    // Interactive shells may print motd, conda init, etc. before our echo.
+  // ---- Primary: interactive shell + explicit source nvm + command env ----
+  try {
     const marker = `__MINIPLAY_PATH_${Date.now()}__`;
-    const raw = exec(`${shell} -ilc 'echo ${marker}; echo $PATH; echo ${marker}'`, {
+    // Use `command env` (POSIX, alias-safe) instead of `echo $PATH` (borrowed from fix-path).
+    // Also explicitly source nvm init script to handle lazy-loading / non-TTY skip.
+    const cmd = [
+      `source "$NVM_DIR/nvm.sh" 2>/dev/null;`,
+      `echo ${marker};`,
+      `command env;`,
+      `echo ${marker}`,
+    ].join(' ');
+
+    const raw: string = exec(`${shell} -ilc '${cmd}'`, {
       encoding: 'utf-8',
-      timeout: 10000,
+      timeout: 15000,
       stdio: 'pipe',
-      env: { ...process.env, HOME: process.env.HOME || require('os').homedir() },
+      env: shellEnv,
     });
 
-    // Extract PATH between markers
-    const lines = raw.split('\n');
+    // Strip ANSI escape chars that nvm/oh-my-zsh may inject (borrowed from fix-path)
+    const cleaned = stripAnsi(raw);
+
+    // Extract content between markers
+    const lines = cleaned.split('\n');
     const startIdx = lines.findIndex((l: string) => l.trim() === marker);
     const endIdx = lines.findIndex((l: string, i: number) => i > startIdx && l.trim() === marker);
     if (startIdx >= 0 && endIdx > startIdx) {
-      const fullPath = lines.slice(startIdx + 1, endIdx).join('').trim();
-      if (fullPath && fullPath.includes('/')) {
-        process.env.PATH = fullPath;
-        console.log('[PATH] Recovered shell PATH (%d chars)', fullPath.length);
-        return;
+      // Find PATH= line in the `command env` output
+      const envBlock = lines.slice(startIdx + 1, endIdx);
+      const pathLine = envBlock.find((l: string) => l.startsWith('PATH='));
+      if (pathLine) {
+        const fullPath = pathLine.substring('PATH='.length).trim();
+        if (fullPath && fullPath.includes('/')) {
+          process.env.PATH = fullPath;
+          console.log('[PATH] Recovered shell PATH via interactive shell + source nvm (%d chars)', fullPath.length);
+          return;
+        }
       }
     }
+    console.log('[PATH] Primary recovery: markers/PATH not found in output, trying fallback');
+  } catch (err: any) {
+    console.warn('[PATH] Primary recovery failed:', err.message);
+  }
 
-    // Fallback: try simple approach
-    const simplePath = exec(`${shell} -lc 'echo $PATH'`, {
+  // ---- Fallback: login shell -lc ----
+  try {
+    const raw: string = exec(`${shell} -lc 'command env'`, {
       encoding: 'utf-8',
       timeout: 10000,
       stdio: 'pipe',
-      env: { ...process.env, HOME: process.env.HOME || require('os').homedir() },
-    }).trim();
+      env: shellEnv,
+    });
 
-    if (simplePath && simplePath.includes('/') && simplePath.length > (process.env.PATH?.length || 0)) {
-      process.env.PATH = simplePath;
-      console.log('[PATH] Recovered shell PATH via fallback (%d chars)', simplePath.length);
+    const cleaned = stripAnsi(raw);
+    const pathLine = cleaned.split('\n').find((l: string) => l.startsWith('PATH='));
+    if (pathLine) {
+      const simplePath = pathLine.substring('PATH='.length).trim();
+      if (simplePath && simplePath.includes('/') && simplePath.length > (process.env.PATH?.length || 0)) {
+        process.env.PATH = simplePath;
+        console.log('[PATH] Recovered shell PATH via login shell fallback (%d chars)', simplePath.length);
+        return;
+      }
     }
+    console.log('[PATH] Fallback recovery: PATH not improved, trying ultimate fallback');
   } catch (err: any) {
-    console.warn('[PATH] Failed to recover shell PATH:', err.message);
-    // Fallback: manually add common paths
-    const sep = ':';
-    const home = process.env.HOME || require('os').homedir();
-    const commonPaths = [
-      '/usr/local/bin',
-      '/opt/homebrew/bin',
-      '/opt/homebrew/sbin',
-      `${home}/.npm-global/bin`,
-      `${home}/.nvm/versions/node`,
-      `${home}/.local/bin`,
-    ];
-    const currentPath = process.env.PATH || '';
-    const missing = commonPaths.filter(p => !currentPath.includes(p));
-    if (missing.length > 0) {
-      process.env.PATH = `${missing.join(sep)}${sep}${currentPath}`;
-    }
+    console.warn('[PATH] Fallback recovery failed:', err.message);
+  }
+
+  // ---- Ultimate fallback: manually assemble common paths ----
+  console.log('[PATH] Using ultimate fallback: manually assembling common paths');
+  const sep = ':';
+  const home = process.env.HOME || require('os').homedir();
+  const commonPaths = [
+    '/usr/local/bin',
+    '/opt/homebrew/bin',
+    '/opt/homebrew/sbin',
+    `${home}/.npm-global/bin`,
+    `${home}/.local/bin`,
+  ];
+
+  // Dynamic nvm bin directory (replaces the old invalid `~/.nvm/versions/node` hardcode)
+  const nvmBin = resolveNvmBinDir();
+  if (nvmBin) {
+    commonPaths.push(nvmBin);
+  }
+
+  const currentPath = process.env.PATH || '';
+  const missing = commonPaths.filter(p => !currentPath.includes(p));
+  if (missing.length > 0) {
+    process.env.PATH = `${missing.join(sep)}${sep}${currentPath}`;
+    console.log('[PATH] Patched PATH with %d missing common paths', missing.length);
   }
 }
 
