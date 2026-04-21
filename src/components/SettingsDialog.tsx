@@ -7,6 +7,7 @@ type CoderAgentId = 'opencode' | 'claude-code' | 'codex' | 'gemini-cli'
 interface CoderDetectResult {
   found: boolean
   version: string | null
+  path: string | null
   agentId: CoderAgentId
   agentName: string
   installInstructions?: string
@@ -31,6 +32,7 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
   const [model, setModel] = useState('')
   const [coderAgent, setCoderAgent] = useState<CoderAgentId>('claude-code')
   const [coderStatuses, setCoderStatuses] = useState<CoderDetectResult[]>([])
+  const [coderBinaryPaths, setCoderBinaryPaths] = useState<Partial<Record<CoderAgentId, string>>>({})
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
 
@@ -43,12 +45,24 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
       setApiKey(config.apiKey)
       setModel(config.model)
       setCoderAgent(config.coderAgent || 'claude-code')
+      setCoderBinaryPaths(config.coderBinaryPaths || {})
     })
 
     // Use cached env detection results for instant display
     window.miniplay.envStatus?.().then((env) => {
       if (env?.coderAgents) {
         setCoderStatuses(env.coderAgents)
+        // Pre-fill binary paths from detection for agents that don't have manual overrides
+        window.miniplay.configGet().then((cfg) => {
+          const manual = cfg.coderBinaryPaths || {}
+          const merged: Partial<Record<CoderAgentId, string>> = { ...manual }
+          for (const agent of env.coderAgents) {
+            if (agent.found && agent.path && !merged[agent.agentId as CoderAgentId]) {
+              merged[agent.agentId as CoderAgentId] = agent.path
+            }
+          }
+          setCoderBinaryPaths(merged)
+        })
       }
     }).catch(() => {
       // Fallback to live detection if envStatus not available
@@ -68,6 +82,7 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
       apiKey: apiKey.trim(),
       model: model.trim(),
       coderAgent: coderAgent as any,
+      coderBinaryPaths: coderBinaryPaths as any,
     })
     setSaving(false)
     setSaved(true)
@@ -85,7 +100,7 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
 
         {/* === GD Agent (LLM) === */}
         <div className="mb-5">
-          <label className="block text-xs font-medium text-slate-500 mb-3">GD Agent (LLM)</label>
+          <label className="block text-xs font-medium text-slate-500 mb-3">Game Design Agent (LLM)</label>
 
           {/* API Endpoint */}
           <label className="block text-xs text-slate-500 mb-1">API Endpoint</label>
@@ -155,23 +170,52 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
             })}
           </div>
 
-          {selectedStatus && !selectedStatus.found && (
-            <div className="mt-3 p-3 rounded-lg bg-amber-50 border border-amber-200">
-              <div className="text-xs text-amber-700 font-medium mb-1">
-                {AGENT_META[coderAgent].name} not installed
-              </div>
-              <div className="text-xs text-slate-700 font-mono bg-slate-100 px-2 py-1.5 rounded mt-1">
-                {selectedStatus.installInstructions}
-              </div>
-              {selectedStatus.installUrl && (
-                <a
-                  href={selectedStatus.installUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-[11px] text-indigo-600 hover:text-indigo-700 mt-2 inline-block"
-                >
-                  {selectedStatus.installUrl}
-                </a>
+          {/* Selected agent details */}
+          {selectedStatus && (
+            <div className={`mt-3 p-3 rounded-lg border ${selectedStatus.found ? 'bg-slate-50 border-slate-200' : 'bg-amber-50 border-amber-200'}`}>
+              {!selectedStatus.found && (
+                <>
+                  <div className="text-xs text-amber-700 font-medium mb-1">
+                    {AGENT_META[coderAgent].name} not detected
+                  </div>
+                  <div className="text-xs text-slate-700 font-mono bg-slate-100 px-2 py-1.5 rounded mt-1">
+                    {selectedStatus.installInstructions}
+                  </div>
+                  {selectedStatus.installUrl && (
+                    <a
+                      href={selectedStatus.installUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[11px] text-indigo-600 hover:text-indigo-700 mt-2 inline-block"
+                    >
+                      {selectedStatus.installUrl}
+                    </a>
+                  )}
+                  <div className="mt-3 border-t border-amber-200 pt-3">
+                    <label className="block text-[11px] text-slate-600 mb-1">
+                      Or provide the CLI binary path manually:
+                    </label>
+                    <input
+                      type="text"
+                      value={coderBinaryPaths[coderAgent] || ''}
+                      onChange={(e) => setCoderBinaryPaths(prev => ({ ...prev, [coderAgent]: e.target.value }))}
+                      placeholder={`/usr/local/bin/${coderAgent === 'claude-code' ? 'claude' : coderAgent === 'gemini-cli' ? 'gemini' : coderAgent}`}
+                      className="w-full px-2.5 py-1.5 text-xs font-mono bg-white border border-slate-300 rounded-lg text-slate-900 placeholder:text-slate-400 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-colors"
+                    />
+                  </div>
+                </>
+              )}
+              {selectedStatus.found && (
+                <>
+                  <label className="block text-[11px] text-slate-500 mb-1">CLI Binary Path</label>
+                  <input
+                    type="text"
+                    value={coderBinaryPaths[coderAgent] || ''}
+                    onChange={(e) => setCoderBinaryPaths(prev => ({ ...prev, [coderAgent]: e.target.value }))}
+                    placeholder={selectedStatus.path || ''}
+                    className="w-full px-2.5 py-1.5 text-xs font-mono bg-white border border-slate-300 rounded-lg text-slate-900 placeholder:text-slate-400 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-colors"
+                  />
+                </>
               )}
             </div>
           )}

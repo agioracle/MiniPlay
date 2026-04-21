@@ -46,7 +46,7 @@ export function patchPath(): void {
  * When a packaged Electron app is launched from Finder/Dock on macOS,
  * process.env.PATH only contains /usr/bin:/bin:/usr/sbin:/sbin.
  * This function runs the user's login shell to get the full PATH
- * (including /usr/local/bin, homebrew, npm global, etc.).
+ * (including /usr/local/bin, homebrew, nvm, npm global, etc.).
  */
 function recoverShellPath(): void {
   if (process.platform !== 'darwin' && process.platform !== 'linux') return;
@@ -54,24 +54,54 @@ function recoverShellPath(): void {
   try {
     const shell = process.env.SHELL || '/bin/zsh';
     const { execSync: exec } = require('child_process');
-    const fullPath = exec(`${shell} -ilc 'echo $PATH'`, {
+
+    // Use a unique marker to extract PATH reliably from shell output.
+    // Interactive shells may print motd, conda init, etc. before our echo.
+    const marker = `__MINIPLAY_PATH_${Date.now()}__`;
+    const raw = exec(`${shell} -ilc 'echo ${marker}; echo $PATH; echo ${marker}'`, {
       encoding: 'utf-8',
-      timeout: 5000,
+      timeout: 10000,
       stdio: 'pipe',
+      env: { ...process.env, HOME: process.env.HOME || require('os').homedir() },
+    });
+
+    // Extract PATH between markers
+    const lines = raw.split('\n');
+    const startIdx = lines.findIndex((l: string) => l.trim() === marker);
+    const endIdx = lines.findIndex((l: string, i: number) => i > startIdx && l.trim() === marker);
+    if (startIdx >= 0 && endIdx > startIdx) {
+      const fullPath = lines.slice(startIdx + 1, endIdx).join('').trim();
+      if (fullPath && fullPath.includes('/')) {
+        process.env.PATH = fullPath;
+        console.log('[PATH] Recovered shell PATH (%d chars)', fullPath.length);
+        return;
+      }
+    }
+
+    // Fallback: try simple approach
+    const simplePath = exec(`${shell} -lc 'echo $PATH'`, {
+      encoding: 'utf-8',
+      timeout: 10000,
+      stdio: 'pipe',
+      env: { ...process.env, HOME: process.env.HOME || require('os').homedir() },
     }).trim();
 
-    if (fullPath && fullPath.length > (process.env.PATH?.length || 0)) {
-      process.env.PATH = fullPath;
+    if (simplePath && simplePath.includes('/') && simplePath.length > (process.env.PATH?.length || 0)) {
+      process.env.PATH = simplePath;
+      console.log('[PATH] Recovered shell PATH via fallback (%d chars)', simplePath.length);
     }
-  } catch {
+  } catch (err: any) {
+    console.warn('[PATH] Failed to recover shell PATH:', err.message);
     // Fallback: manually add common paths
     const sep = ':';
+    const home = process.env.HOME || require('os').homedir();
     const commonPaths = [
       '/usr/local/bin',
       '/opt/homebrew/bin',
       '/opt/homebrew/sbin',
-      `${process.env.HOME}/.npm-global/bin`,
-      `${process.env.HOME}/.nvm/versions/node`,
+      `${home}/.npm-global/bin`,
+      `${home}/.nvm/versions/node`,
+      `${home}/.local/bin`,
     ];
     const currentPath = process.env.PATH || '';
     const missing = commonPaths.filter(p => !currentPath.includes(p));

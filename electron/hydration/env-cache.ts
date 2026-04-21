@@ -2,6 +2,7 @@ import { detectNode, type DetectResult } from './detect-node';
 import { detectPhaserWx } from './detect-phaser-wx';
 import { detectAllCoders, type CoderDetectResult } from './detect-coder';
 import type { CoderAgentId } from '../coder/agents';
+import { readConfig } from '../storage/config';
 
 export interface EnvStatus {
   node: DetectResult;
@@ -60,10 +61,17 @@ export function getPhaserWxBinaryPath(): string {
 }
 
 /**
- * Look up the absolute binary path for a coder agent from the cache.
- * Returns null if the agent was not detected or has no path.
+ * Look up the absolute binary path for a coder agent.
+ * Priority: manual path from config > auto-detected path from cache.
+ * Returns null if neither is available.
  */
 export function getCoderBinaryPath(agentId: CoderAgentId): string | null {
+  // Check manual override in config first
+  const config = readConfig();
+  const manualPath = config.coderBinaryPaths?.[agentId];
+  if (manualPath) return manualPath;
+
+  // Fallback to auto-detected
   const status = getEnvStatus();
   const agent = status.coderAgents.find(a => a.agentId === agentId);
   return agent?.found ? agent.path : null;

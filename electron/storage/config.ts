@@ -13,6 +13,8 @@ export interface AppConfig {
   coderAgent: CoderAgentId;
   /** Whether first-launch hydration has completed */
   hydrationComplete: boolean;
+  /** Manual binary paths for coder agents (overrides auto-detection) */
+  coderBinaryPaths?: Partial<Record<CoderAgentId, string>>;
 }
 
 const DEFAULT_CONFIG: AppConfig = {
@@ -21,6 +23,7 @@ const DEFAULT_CONFIG: AppConfig = {
   model: '',
   coderAgent: 'claude-code',
   hydrationComplete: false,
+  coderBinaryPaths: {},
 };
 
 export function readConfig(): AppConfig {

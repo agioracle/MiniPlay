@@ -16,6 +16,7 @@ export interface AppConfig {
   model: string;
   coderAgent: CoderAgentId;
   hydrationComplete: boolean;
+  coderBinaryPaths?: Partial<Record<CoderAgentId, string>>;
 }
 
 export interface CoderDetectResult {
