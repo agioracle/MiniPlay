@@ -25,6 +25,8 @@
 
 MiniPlay is an AI-powered desktop application that generates playable WeChat mini-games from natural language descriptions. Describe your game idea in a chat conversation, and MiniPlay's AI agents will design, code, preview, and package it — all without writing a single line of code.
 
+![](./miniplay.png)
+
 ## How It Works
 
 MiniPlay uses a two-phase AI agent architecture:
