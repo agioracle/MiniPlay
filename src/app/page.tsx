@@ -212,7 +212,7 @@ export default function Home() {
               {/* New Game card */}
               <button
                 onClick={handleNewGame}
-                className="p-4 rounded-xl border-2 border-dashed border-slate-300 hover:border-indigo-400 bg-white hover:bg-indigo-50/50 transition-all flex flex-col items-center justify-center min-h-[180px] group"
+                className="p-4 rounded-xl border-2 border-dashed border-slate-300 hover:border-indigo-400 bg-white hover:bg-indigo-50/50 transition-all flex flex-col items-center justify-center min-h-45 group"
               >
                 <div className="w-12 h-12 rounded-full bg-indigo-50 group-hover:bg-indigo-100 flex items-center justify-center mb-3 transition-colors">
                   <svg className="w-6 h-6 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -250,7 +250,7 @@ export default function Home() {
             <div className="absolute inset-0 bg-black/30" />
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
               <div
-                className="pointer-events-auto bg-white rounded-2xl p-6 w-[360px] card-shadow"
+                className="pointer-events-auto bg-white rounded-2xl p-6 w-90 card-shadow"
                 onClick={e => e.stopPropagation()}
               >
                 <h3 className="text-lg font-serif text-slate-900 mb-2">Delete Project</h3>

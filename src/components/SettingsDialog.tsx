@@ -95,7 +95,7 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/30" onClick={onClose} />
 
-      <div className="relative bg-white rounded-2xl p-6 w-[480px] max-h-[90vh] overflow-y-auto card-shadow">
+      <div className="relative bg-white rounded-2xl p-6 w-120 max-h-[90vh] overflow-y-auto card-shadow">
         <h2 className="text-xl font-serif text-slate-900 mb-5">Settings</h2>
 
         {/* === GD Agent (LLM) === */}

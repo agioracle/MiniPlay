@@ -186,7 +186,7 @@ export function LiveView({ autoPreview = false }: { autoPreview?: boolean }) {
                 </span>
                 <span className="text-xs text-red-600">{STATUS_LABELS[status]}</span>
                 {error && (
-                  <span className="text-[10px] text-slate-500 max-w-[240px] text-center truncate">{error}</span>
+                  <span className="text-[10px] text-slate-500 max-w-60 text-center truncate">{error}</span>
                 )}
               </>
             )}
