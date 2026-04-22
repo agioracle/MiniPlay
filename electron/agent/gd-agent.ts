@@ -9,6 +9,7 @@ import { sendToCoderTool } from './tools/send-to-coder';
 import { triggerBuildTool } from './tools/trigger-build';
 import { triggerExportTool } from './tools/trigger-export';
 import { readConfig } from '../storage/config';
+import { readGdd } from '../project/gdd';
 
 /**
  * Known API endpoint patterns to determine which SDK provider to use.
@@ -55,6 +56,7 @@ const tools = {
 export async function runGdAgentTurn(
   messages: ModelMessage[],
   win: BrowserWindow,
+  projectPath?: string | null,
 ): Promise<{
   text: string;
   toolCalls: Array<{ id: string; name: string; args: Record<string, unknown> }>;
@@ -64,10 +66,20 @@ export async function runGdAgentTurn(
   console.log('[GD Agent] Starting turn. Messages: %d', messages.length);
 
   // Inject current date into system prompt so GDD timestamps are accurate
-  const systemPrompt = GD_SYSTEM_PROMPT.replace(
+  let systemPrompt = GD_SYSTEM_PROMPT.replace(
     /CURRENT_DATETIME/g,
     new Date().toISOString(),
   );
+
+  // Inject current GDD content so the LLM has full context when editing it.
+  // Without this, section-level edits tend to drift because the LLM is only
+  // working from its own prior natural-language summaries.
+  if (projectPath) {
+    const currentGdd = readGdd(projectPath);
+    if (currentGdd.trim().length > 0) {
+      systemPrompt += `\n\n## Current GDD (authoritative — always base edits on this)\n\n\`\`\`markdown\n${currentGdd}\n\`\`\``;
+    }
+  }
 
   const result = streamText({
     model,

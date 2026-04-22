@@ -97,7 +97,7 @@ export function registerAgentHandlers() {
 
       try {
         console.log('[GD Agent] Running PM agent turn with %d messages...', modelMessages.length);
-        const result = await runGdAgentTurn(modelMessages, win);
+        const result = await runGdAgentTurn(modelMessages, win, projectPath);
 
         console.log('[GD Agent] Turn complete. Text length: %d, Tool calls: %d', result.text.length, result.toolCalls.length);
 
