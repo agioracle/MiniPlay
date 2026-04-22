@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { runCoderAgent } from '../../coder/coder-runner';
 import { updateGddSection } from '../../project/gdd';
 import { getActiveProject } from '../../project/state';
-import { refreshPreview } from '../../process/preview-bridge';
+import { autoBuildAfterCoder, formatAutoBuildSummary } from '../../process/auto-build';
 import { BrowserWindow } from 'electron';
 
 const inputSchema = zodSchema(
@@ -100,45 +100,19 @@ export const sendToCoderTool = tool({
         );
       }
 
-      // Auto-trigger H5 build when coder succeeded AND actually changed files.
-      // This runs strictly after runCoderAgent resolves, so "Working..." and
-      // "Building..." never overlap in the UI. See plan fix-gdd-confirm-concurrent-build.
+      // Auto-trigger H5 build when coder succeeded. We no longer gate on
+      // `changedFiles.length > 0`: set-diff of `git status --porcelain` misses
+      // coder auto-commits and repeated edits to already-dirty files, and a
+      // true no-op rebuild is cheap (vite is incremental). See plan
+      // fix-rebuild-not-triggered-after-coder.
       let buildSummary = '';
-      if (result.success && result.changedFiles.length > 0) {
-        const buildAutoId = `build_auto_${coderToolCallId}`;
-        console.log('[send_to_coder] Auto-build: starting...');
-        if (win) {
-          win.webContents.send('agent:stream', {
-            type: 'tool-call',
-            toolCallId: buildAutoId,
-            toolName: 'trigger_build',
-          });
-        }
-        try {
-          const buildResult = await refreshPreview(win || undefined);
-          const durationSec = ((buildResult.buildDuration || 0) / 1000).toFixed(1);
-          console.log('[send_to_coder] Auto-build: %s (%ss)', buildResult.success ? 'success' : 'failed', durationSec);
-          if (win) {
-            win.webContents.send('agent:stream', {
-              type: 'tool-result',
-              toolCallId: buildAutoId,
-              result: buildResult,
-            });
-          }
-          buildSummary = buildResult.success
-            ? ` Build completed in ${durationSec}s${buildResult.url ? `, preview at ${buildResult.url}` : ''}${buildResult.selfHealed ? ' (self-healed)' : ''}.`
-            : ` Build FAILED: ${buildResult.error || 'unknown error'}.`;
-        } catch (buildErr: any) {
-          console.error('[send_to_coder] Auto-build exception:', buildErr?.message);
-          if (win) {
-            win.webContents.send('agent:stream', {
-              type: 'tool-result',
-              toolCallId: buildAutoId,
-              result: { success: false, error: buildErr?.message },
-            });
-          }
-          buildSummary = ` Build errored: ${buildErr?.message || buildErr}.`;
-        }
+      if (result.success) {
+        const buildResult = await autoBuildAfterCoder({
+          win,
+          batchId: coderToolCallId,
+          toolCallId: `build_auto_${coderToolCallId}`,
+        });
+        buildSummary = formatAutoBuildSummary(buildResult);
       }
 
       return {

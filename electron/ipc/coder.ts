@@ -5,7 +5,7 @@ import { runCoderAgent } from '../coder/coder-runner';
 import { getActiveProject } from '../project/state';
 import { getEnvStatus } from '../hydration/env-cache';
 import { readConfig } from '../storage/config';
-import { refreshPreview } from '../process/preview-bridge';
+import { autoBuildAfterCoder } from '../process/auto-build';
 import { appendMessage, type StoredMessage } from '../agent/message-store';
 
 interface ImageData {
@@ -156,12 +156,14 @@ export function registerCoderHandlers() {
         };
         appendMessage(projectPath, coderMsg);
 
-        // Auto-trigger build on success
-        if (result.success && result.changedFiles.length > 0) {
-          sendEvent({ type: 'tool-call', toolCallId: 'build_auto', toolName: 'trigger_build' });
-          const buildResult = await refreshPreview(win);
-          sendEvent({ type: 'tool-result', toolCallId: 'build_auto' });
-          console.log('[coder:send] Auto-build: %s', buildResult.success ? 'success' : 'failed');
+        // Auto-trigger build on success. We no longer gate on
+        // `changedFiles.length > 0` — see plan fix-rebuild-not-triggered-after-coder.
+        if (result.success) {
+          await autoBuildAfterCoder({
+            win,
+            batchId,
+            toolCallId: 'build_auto',
+          });
         }
 
         sendEvent({ type: 'done', text: summaryText });
