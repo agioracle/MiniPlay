@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { ChatMessage, type Message } from '@/components/ChatMessage'
 import { ChatInput, type ImageAttachment } from '@/components/ChatInput'
-import { Sparkles, Terminal } from 'lucide-react'
+import { Sparkles, Terminal, FileCheck } from 'lucide-react'
 
 const DEFAULT_WELCOME: Message[] = [
   {
@@ -24,18 +24,24 @@ interface CoderBatch {
 
 interface ChatPanelProps {
   initialMessages?: Message[]
-  onSend: (text: string, images?: ImageAttachment[]) => Promise<{ text?: string; toolCalls?: unknown[]; error?: string; projectCreated?: boolean; success?: boolean }>
+  onSend: (text: string, images?: ImageAttachment[]) => Promise<{ text?: string; toolCalls?: unknown[]; error?: string; projectCreated?: boolean; gddUpdated?: boolean; success?: boolean }>
+  /** Dedicated callback for GDD confirmation — always routes through GD Agent regardless of projectPhase */
+  onGddConfirm?: (text: string) => Promise<{ text?: string; toolCalls?: unknown[]; error?: string; projectCreated?: boolean; gddUpdated?: boolean; success?: boolean }>
   projectPhase?: 'gd' | 'code'
+  onGddUpdated?: () => void
 }
 
-export function ChatPanel({ initialMessages, onSend, projectPhase = 'gd' }: ChatPanelProps) {
+export function ChatPanel({ initialMessages, onSend, onGddConfirm, projectPhase = 'gd', onGddUpdated }: ChatPanelProps) {
   const [messages, setMessages] = useState<Message[]>(initialMessages ?? DEFAULT_WELCOME)
   const [isLoading, setIsLoading] = useState(false)
   const [streamingText, setStreamingText] = useState('')
   const [activeToolCalls, setActiveToolCalls] = useState<Map<string, { name: string; status: 'running' | 'done' }>>(new Map())
   const [coderBatches, setCoderBatches] = useState<CoderBatch[]>([])
+  const [pendingGddConfirm, setPendingGddConfirm] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const coderLogRefs = useRef<Map<string, HTMLDivElement>>(new Map())
+  const onGddUpdatedRef = useRef(onGddUpdated)
+  onGddUpdatedRef.current = onGddUpdated
 
   // Sync messages when initialMessages prop changes (e.g. opening a different project)
   useEffect(() => {
@@ -137,6 +143,11 @@ export function ChatPanel({ initialMessages, onSend, projectPhase = 'gd' }: Chat
           }
           return next
         })
+      } else if (event.type === 'gdd-updated') {
+        // GDD has been updated — notify parent to switch to GDD tab
+        onGddUpdatedRef.current?.()
+        // Mark that we need user confirmation
+        setPendingGddConfirm(true)
       } else if (event.type === 'done') {
         if (event.batchId) {
           // Mark specific batch as done
@@ -155,7 +166,11 @@ export function ChatPanel({ initialMessages, onSend, projectPhase = 'gd' }: Chat
     return unsub
   }, [])
 
-  const handleSend = useCallback(async (text: string, images?: ImageAttachment[]) => {
+  const handleSendWithFn = useCallback(async (
+    text: string,
+    sendFn: (text: string, images?: ImageAttachment[]) => Promise<{ text?: string; toolCalls?: unknown[]; error?: string; projectCreated?: boolean; gddUpdated?: boolean; success?: boolean }>,
+    images?: ImageAttachment[],
+  ) => {
     const userMsg: Message = {
       id: `msg_${Date.now()}`,
       role: 'user',
@@ -171,7 +186,7 @@ export function ChatPanel({ initialMessages, onSend, projectPhase = 'gd' }: Chat
     setCoderBatches(prev => prev.filter(b => !b.done))
 
     try {
-      const result = await onSend(text, images)
+      const result = await sendFn(text, images)
       if (result.error) {
         setMessages(prev => [...prev, {
           id: `msg_${Date.now()}_error`,
@@ -201,7 +216,19 @@ export function ChatPanel({ initialMessages, onSend, projectPhase = 'gd' }: Chat
       setIsLoading(false)
       setActiveToolCalls(new Map())
     }
-  }, [onSend])
+  }, [])
+
+  const handleSend = useCallback(async (text: string, images?: ImageAttachment[]) => {
+    await handleSendWithFn(text, onSend, images)
+  }, [onSend, handleSendWithFn])
+
+  const handleGddConfirm = useCallback(async () => {
+    setPendingGddConfirm(false)
+    // Use dedicated GD Agent callback to ensure this always goes through GD Agent,
+    // not Code Agent (which happens when projectPhase is 'code')
+    const sendFn = onGddConfirm || onSend
+    await handleSendWithFn('GDD 确认完成，请开始编码', sendFn)
+  }, [onGddConfirm, onSend, handleSendWithFn])
 
   const setCoderLogRef = useCallback((batchId: string, el: HTMLDivElement | null) => {
     if (el) {
@@ -257,6 +284,28 @@ export function ChatPanel({ initialMessages, onSend, projectPhase = 'gd' }: Chat
                 </span>
               </div>
             ))}
+          </div>
+        )}
+
+        {/* GDD Confirm Button — shown after GDD is updated, waiting for user confirmation */}
+        {pendingGddConfirm && !isLoading && (
+          <div className="flex justify-start">
+            <div className="rounded-xl px-4 py-3 max-w-[90%] bg-amber-50 border border-amber-200 mr-8">
+              <div className="flex items-center gap-2 mb-2 text-amber-700">
+                <FileCheck className="w-4 h-4" />
+                <span className="text-xs font-semibold">GDD Ready for Review</span>
+              </div>
+              <p className="text-xs text-amber-600 mb-3">
+                GDD 文档已更新，请在右侧面板查看并确认。确认后将开始编码。
+              </p>
+              <button
+                onClick={handleGddConfirm}
+                className="w-full px-4 py-2 text-sm font-medium rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white transition-colors flex items-center justify-center gap-2"
+              >
+                <FileCheck className="w-3.5 h-3.5" />
+                确认 GDD，开始编码
+              </button>
+            </div>
           </div>
         )}
 

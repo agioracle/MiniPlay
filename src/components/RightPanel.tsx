@@ -1,14 +1,25 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useImperativeHandle, forwardRef } from 'react'
 import { LiveView } from '@/components/LiveView'
 import { GddEditor } from '@/components/GddEditor'
 import { AssetsPanel } from '@/components/AssetsPanel'
 
 type RightTab = 'preview' | 'gdd' | 'assets'
 
-export function RightPanel({ autoPreview = false }: { autoPreview?: boolean }) {
-  const [activeTab, setActiveTab] = useState<RightTab>('preview')
+export interface RightPanelHandle {
+  switchToGdd: () => void
+}
+
+export const RightPanel = forwardRef<RightPanelHandle, { autoPreview?: boolean }>(
+  function RightPanel({ autoPreview = false }, ref) {
+    const [activeTab, setActiveTab] = useState<RightTab>('preview')
+
+    useImperativeHandle(ref, () => ({
+      switchToGdd() {
+        setActiveTab('gdd')
+      },
+    }), [])
 
   return (
     <div className="h-full flex flex-col">
@@ -60,4 +71,4 @@ export function RightPanel({ autoPreview = false }: { autoPreview?: boolean }) {
       </div>
     </div>
   )
-}
+})

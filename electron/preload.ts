@@ -30,7 +30,7 @@ export interface CoderDetectResult {
 }
 
 export interface AgentStreamEvent {
-  type: 'text-delta' | 'tool-call' | 'tool-result' | 'coder-status' | 'coder-output' | 'done' | 'error';
+  type: 'text-delta' | 'tool-call' | 'tool-result' | 'coder-status' | 'coder-output' | 'gdd-updated' | 'done' | 'error';
   text?: string;
   toolCallId?: string;
   toolName?: string;
@@ -82,7 +82,7 @@ export interface MiniPlayAPI {
   configSet: (partial: Partial<AppConfig>) => Promise<AppConfig>;
 
   // Agent
-  agentSend: (payload: { message: string; projectPath?: string; images?: Array<{ name: string; mimeType: string; base64: string }> }) => Promise<{ text?: string; toolCalls?: unknown[]; projectCreated?: boolean; error?: string }>;
+  agentSend: (payload: { message: string; projectPath?: string; images?: Array<{ name: string; mimeType: string; base64: string }> }) => Promise<{ text?: string; toolCalls?: unknown[]; projectCreated?: boolean; gddUpdated?: boolean; error?: string }>;
   agentHistory: (projectPath: string) => Promise<StoredMessage[]>;
   agentClearPending: () => Promise<{ success: boolean }>;
   onAgentStream: (callback: (event: AgentStreamEvent) => void) => () => void;

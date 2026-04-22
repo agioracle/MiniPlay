@@ -1,12 +1,12 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { SetupWizard } from '@/components/setup/SetupWizard'
 import { EnvCheckScreen } from '@/components/EnvCheckScreen'
 import { WaveDotsBackground } from '@/components/WaveDotsBackground'
 import { TopBar } from '@/components/TopBar'
 import { ChatPanel } from '@/components/ChatPanel'
-import { RightPanel } from '@/components/RightPanel'
+import { RightPanel, type RightPanelHandle } from '@/components/RightPanel'
 import { ProjectCard } from '@/components/ProjectCard'
 import { HeroSection } from '@/components/HeroSection'
 import { SettingsDialog } from '@/components/SettingsDialog'
@@ -32,6 +32,12 @@ export default function Home() {
   const [deleteConfirm, setDeleteConfirm] = useState<ProjectEntry | null>(null)
   const [projectPhase, setProjectPhase] = useState<ProjectPhase>('gd')
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const rightPanelRef = useRef<RightPanelHandle>(null)
+
+  const handleGddUpdated = useCallback(() => {
+    // Switch RightPanel to GDD tab when GDD is updated
+    rightPanelRef.current?.switchToGdd()
+  }, [])
 
   const loadProjects = useCallback(async () => {
     if (window.miniplay?.projectList) {
@@ -285,11 +291,13 @@ export default function Home() {
           <ChatPanel
             initialMessages={restoredMessages ?? undefined}
             onSend={projectPhase === 'gd' ? handleGdSend : handleCodePhaseSend}
+            onGddConfirm={handleGdSend}
             projectPhase={projectPhase}
+            onGddUpdated={handleGddUpdated}
           />
         </div>
         <div className="w-[60%]">
-          <RightPanel autoPreview={restoredMessages !== null} />
+          <RightPanel ref={rightPanelRef} autoPreview={restoredMessages !== null} />
         </div>
       </main>
     </div>

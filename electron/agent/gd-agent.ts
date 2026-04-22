@@ -96,6 +96,16 @@ export async function runGdAgentTurn(
           toolCallId: chunk.toolCallId,
           result: chunk.output,
         });
+
+        // Notify frontend when GDD has been updated so it can refresh the GDD editor
+        // and show the confirmation button
+        const toolResult = chunk.output as any;
+        if (chunk.toolName === 'update_gdd' && toolResult?.success) {
+          console.log('[GD Agent] GDD updated — sending gdd-updated event');
+          win.webContents.send('agent:stream', {
+            type: 'gdd-updated',
+          });
+        }
       }
     },
   });

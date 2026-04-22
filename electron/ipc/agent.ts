@@ -130,7 +130,10 @@ export function registerAgentHandlers() {
           pendingMessages.push(assistantMsg);
         }
 
-        return { text: result.text, toolCalls: result.toolCalls, projectCreated };
+        // Check if update_gdd was called during this turn
+        const gddUpdated = result.toolCalls.some(tc => tc.name === 'update_gdd');
+
+        return { text: result.text, toolCalls: result.toolCalls, projectCreated, gddUpdated };
       } catch (err: any) {
         const errorMsg = err?.message || String(err);
         console.error('[GD Agent] Error:', errorMsg);
