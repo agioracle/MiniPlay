@@ -10,6 +10,51 @@ import * as path from 'path';
 const MAX_RETRIES = 3;
 
 /**
+ * Substrings that indicate the coder failure is NOT worth retrying within a
+ * single self-heal session, because no amount of retries inside the same
+ * process state can fix them (missing binary, auth, quota, etc.). Matched
+ * case-insensitively against coderResult.error.
+ */
+const UNRECOVERABLE_ERROR_PATTERNS: readonly string[] = [
+  'ENOENT',                // binary not found on PATH
+  'not found',             // generic "... not found"
+  'command not found',
+  'permission denied',     // chmod / exec bit missing
+  'EACCES',
+  'unauthorized',          // 401
+  'authentication',        // generic auth failure
+  'invalid api key',
+  'api key',
+  'quota',                 // hit plan quota
+  'rate limit',            // still worth noting; retrying immediately won't help
+  'insufficient',          // "insufficient credits/balance"
+];
+
+/**
+ * Normalize a coder error string into a short fingerprint so we can detect
+ * "two consecutive attempts failed for the exact same reason" and bail early
+ * instead of wasting the remaining retry budget.
+ */
+function errorFingerprint(err: string | undefined): string {
+  if (!err) return '';
+  return err
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    // Strip volatile tokens (timestamps, hashes, PIDs, request-ids, paths)
+    .replace(/\b\d{1,}\b/g, 'N')
+    .replace(/\b[a-f0-9]{8,}\b/g, 'HEX')
+    .replace(/(\/[^\s'"]+)/g, 'PATH')
+    .trim()
+    .slice(0, 200);
+}
+
+function isUnrecoverable(err: string | undefined): boolean {
+  if (!err) return false;
+  const lower = err.toLowerCase();
+  return UNRECOVERABLE_ERROR_PATTERNS.some((p) => lower.includes(p));
+}
+
+/**
  * Build a fix prompt from error context.
  */
 function buildFixPrompt(errors: ParsedError[], projectPath: string): string {
@@ -88,6 +133,10 @@ export async function selfHeal(options: {
     win?.webContents.send('agent:stream', data);
   };
 
+  // Track the previous attempt's coder-failure fingerprint so we can detect
+  // "stuck in a loop" situations (same error twice in a row) and abort early.
+  let previousCoderErrorFingerprint = '';
+
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     console.log('[SelfHeal] Attempt %d/%d — errors: %s', attempt, MAX_RETRIES, currentErrors.map(e => e.message.slice(0, 80)).join('; '));
 
@@ -155,13 +204,69 @@ export async function selfHeal(options: {
     });
 
     if (!coderResult.success) {
-      sendBatch({ type: 'coder-status', text: `attempt ${attempt} failed — agent error` });
-      sendBatch({ type: 'coder-output', text: `❌ Code Agent failed: ${coderResult.error || 'unknown error'}` });
+      const errMsg = coderResult.error || 'unknown error';
+      const fingerprint = errorFingerprint(errMsg);
+      const unrecoverable = isUnrecoverable(errMsg);
+      const repeated =
+        !!previousCoderErrorFingerprint &&
+        fingerprint === previousCoderErrorFingerprint;
+
+      // Decide whether to bail out of the whole self-heal session instead of
+      // burning the remaining retry budget on a failure mode that cannot
+      // improve between attempts.
+      const shouldAbort = unrecoverable || repeated;
+
+      const reasonLabel = unrecoverable
+        ? 'unrecoverable error'
+        : repeated
+          ? 'same error as previous attempt'
+          : 'agent error';
+
+      sendBatch({
+        type: 'coder-status',
+        text: shouldAbort
+          ? `aborted — ${reasonLabel}`
+          : `attempt ${attempt} failed — ${reasonLabel}`,
+      });
+      sendBatch({ type: 'coder-output', text: `❌ Code Agent failed: ${errMsg}` });
+
+      if (shouldAbort) {
+        const abortNote = unrecoverable
+          ? '⛔ Error appears unrecoverable (missing binary / auth / quota). Aborting self-heal and surfacing to user.'
+          : '⛔ Same error as previous attempt — not making progress. Aborting self-heal to avoid wasting retries.';
+        sendBatch({ type: 'coder-output', text: abortNote });
+      }
+
       sendBatch({ type: 'tool-result', toolCallId: selfHealId });
       sendBatch({ type: 'done' });
-      console.log('[SelfHeal] Coder agent failed on attempt %d', attempt);
+
+      console.log(
+        '[SelfHeal] Coder agent failed on attempt %d (unrecoverable=%s, repeated=%s)',
+        attempt,
+        unrecoverable,
+        repeated,
+      );
+
+      if (shouldAbort) {
+        win?.webContents.send('preview:status', {
+          status: 'self-heal-failed',
+          errors: currentErrors,
+          reason: reasonLabel,
+        });
+        return {
+          success: false,
+          attempts: attempt,
+          finalErrors: currentErrors,
+        };
+      }
+
+      previousCoderErrorFingerprint = fingerprint;
       continue;
     }
+
+    // Clear the fingerprint on successful coder run — next failure (if any)
+    // should be compared only against this new run's error, not older ones.
+    previousCoderErrorFingerprint = '';
 
     // Try rebuilding
     sendBatch({ type: 'coder-output', text: '' });
