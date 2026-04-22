@@ -64,43 +64,43 @@ jobs:
             release/*.zip
           if-no-files-found: error
 
-  build-windows:
-    runs-on: windows-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+  # build-windows:
+  #   runs-on: windows-latest
+  #   steps:
+  #     - name: Checkout
+  #       uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
+  #     - name: Setup Node.js
+  #       uses: actions/setup-node@v4
+  #       with:
+  #         node-version: 20
+  #         cache: npm
 
-      - name: Generate Windows icon
-        run: npx png-to-ico build/icon.png > build/icon.ico
-        shell: bash
+  #     - name: Generate Windows icon
+  #       run: npx png-to-ico build/icon.png > build/icon.ico
+  #       shell: bash
 
-      - name: Install dependencies
-        run: npm ci
+  #     - name: Install dependencies
+  #       run: npm ci
 
-      - name: Build app
-        run: npm run build
+  #     - name: Build app
+  #       run: npm run build
 
-      - name: Package
-        run: npx electron-builder --win --x64 --publish never
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  #     - name: Package
+  #       run: npx electron-builder --win --x64 --publish never
+  #       env:
+  #         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-x64
-          path: |
-            release/*.exe
-          if-no-files-found: error
+  #     - name: Upload artifacts
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: windows-x64
+  #         path: |
+  #           release/*.exe
+  #         if-no-files-found: error
 
   release:
-    needs: [build-macos, build-windows]
+    needs: [build-macos]  # , build-windows
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -131,6 +131,6 @@ jobs:
           files: |
             artifacts/**/*.dmg
             artifacts/**/*.zip
-            artifacts/**/*.exe
+            # artifacts/**/*.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
