@@ -1,9 +1,9 @@
 {
-  "name": "miniplay-native",
-  "version": "0.1.0",
+  "name": "MiniPlay",
+  "version": "0.1.1",
   "private": true,
   "author": "MiniPlay Team",
-  "description": "MiniPlay Native - AI-powered WeChat mini-game generator",
+  "description": "MiniPlay - AI-powered WeChat mini-game generator",
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "concurrently -n next,tsc,electron \"next dev --port 3000\" \"tsc -p tsconfig.electron.json -w\" \"wait-on http://localhost:3000 && tsc -p tsconfig.electron.json && electron .\"",
