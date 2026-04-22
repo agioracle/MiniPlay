@@ -89,6 +89,15 @@ export const sendToCoderTool = tool({
           'Latest Patch',
           `- [${new Date().toISOString()}] [DONE] ${input.summary}\n  Changed files: ${result.changedFiles.join(', ')}\n  Agent: ${result.agentUsed}`,
         );
+      } else {
+        // Record failure in GDD so future coder runs have context and the user
+        // can see what went wrong in the project's own history.
+        const errSnippet = (result.error || 'unknown error').replace(/\s+/g, ' ').slice(0, 240);
+        updateGddSection(
+          projectPath,
+          'Latest Patch',
+          `- [${new Date().toISOString()}] [FAILED] ${input.summary}\n  Agent: ${result.agentUsed}\n  Error: ${errSnippet}${result.changedFiles.length > 0 ? `\n  Partial changes left on disk: ${result.changedFiles.join(', ')}` : ''}`,
+        );
       }
 
       // Auto-trigger H5 build when coder succeeded AND actually changed files.
@@ -140,7 +149,7 @@ export const sendToCoderTool = tool({
           ? `Code updated by ${result.agentUsed}. Changed files: ${result.changedFiles.join(', ')}.${buildSummary}`
           : result.error?.includes('ENOENT')
             ? `Coder Agent "${result.agentUsed}" binary not found. Please check that it is installed and accessible from your PATH. You can verify in Settings. Do NOT retry — the user needs to fix the installation first.`
-            : `Code modification failed (${result.agentUsed}): ${result.error}. Do NOT retry the same request — inform the user about the error.`,
+            : `CODER FAILED (${result.agentUsed}). Error: ${(result.error || 'unknown').slice(0, 400)}. ${result.changedFiles.length > 0 ? `WARNING: ${result.changedFiles.length} partial file(s) left on disk: ${result.changedFiles.slice(0, 5).join(', ')}${result.changedFiles.length > 5 ? ', ...' : ''}. Do NOT claim success. ` : ''}Do NOT retry the same request automatically — inform the user about the failure and ask how to proceed.`,
       };
     } catch (err: any) {
       console.error('[send_to_coder] Exception:', err.message);

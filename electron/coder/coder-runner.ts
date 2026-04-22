@@ -21,21 +21,42 @@ export interface CoderResult {
 }
 
 /**
- * Detect changed files by comparing git status before and after.
+ * Snapshot the current dirty file set (tracked modifications + untracked) so we
+ * can later diff against it to isolate files changed by THIS coder invocation.
+ * Using only `git diff --name-only HEAD` would also count pre-existing dirty
+ * files from earlier iterations, leading to false-positive success detection.
  */
-function getChangedFiles(projectPath: string): string[] {
+function snapshotDirtyFiles(projectPath: string): Set<string> {
   try {
-    const output = execSync('git diff --name-only HEAD', {
+    // `git status --porcelain` covers both tracked changes AND untracked files.
+    const output = execSync('git status --porcelain', {
       cwd: projectPath,
       encoding: 'utf-8',
       timeout: 5000,
       stdio: 'pipe',
     }).trim();
-    if (!output) return [];
-    return output.split('\n').filter(Boolean);
+    if (!output) return new Set();
+    const files = output
+      .split('\n')
+      .map((line) => line.slice(3).trim()) // strip 2-char status + space
+      .filter(Boolean);
+    return new Set(files);
   } catch {
-    return [];
+    return new Set();
   }
+}
+
+/**
+ * Detect files changed by the current coder invocation, excluding pre-existing
+ * dirty files captured in the baseline.
+ */
+function getNewlyChangedFiles(projectPath: string, baseline: Set<string>): string[] {
+  const current = snapshotDirtyFiles(projectPath);
+  const diff: string[] = [];
+  for (const f of current) {
+    if (!baseline.has(f)) diff.push(f);
+  }
+  return diff;
 }
 
 /**
@@ -89,14 +110,35 @@ function extractDisplayText(jsonLine: string): string | null {
 }
 
 /**
- * Extract the final result text from a stream-json result message.
+ * Parsed metadata from a stream-json `result` message. CLIs like claude-code
+ * emit one such message at the very end carrying authoritative success info:
+ *   { type: "result", subtype: "success" | "error_max_turns" | "error_during_execution" | ...,
+ *     is_error: boolean, result: string, num_turns, total_cost_usd, ... }
  */
-function tryExtractResultText(jsonLine: string): string | null {
+interface CoderResultMeta {
+  text: string | null;
+  subtype: string | null;
+  isError: boolean | null;
+}
+
+/**
+ * Extract the final result text + error metadata from a stream-json result line.
+ */
+function tryExtractResultMeta(jsonLine: string): CoderResultMeta | null {
   try {
     const parsed = JSON.parse(jsonLine);
-    if (parsed.type === 'result' && parsed.result) {
-      return typeof parsed.result === 'string' ? parsed.result : JSON.stringify(parsed.result);
-    }
+    if (parsed.type !== 'result') return null;
+    const text =
+      parsed.result == null
+        ? null
+        : typeof parsed.result === 'string'
+          ? parsed.result
+          : JSON.stringify(parsed.result);
+    return {
+      text,
+      subtype: typeof parsed.subtype === 'string' ? parsed.subtype : null,
+      isError: typeof parsed.is_error === 'boolean' ? parsed.is_error : null,
+    };
   } catch {}
   return null;
 }
@@ -147,6 +189,11 @@ export function runCoderAgent(options: {
 
     onStatus?.('agent:planning');
 
+    // Snapshot pre-existing dirty files BEFORE launching the CLI so we can
+    // isolate files changed by this run from older uncommitted changes.
+    const dirtyBaseline = snapshotDirtyFiles(projectPath);
+    console.log('[Coder] Dirty baseline: %d pre-existing files', dirtyBaseline.size);
+
     return new Promise<CoderResult>((resolve) => {
       const timeoutMs = 3600000; // 60 minutes
 
@@ -171,7 +218,7 @@ export function runCoderAgent(options: {
       let stderr = '';
       let settled = false;
       let capturedSessionId: string | null = null;
-      let capturedResultText: string | null = null;
+      let capturedResultMeta: CoderResultMeta | null = null;
 
       // Stream stdout — parse JSON for structured agents, raw lines otherwise
       child.stdout.on('data', (chunk: Buffer) => {
@@ -195,9 +242,10 @@ export function runCoderAgent(options: {
 
           // Extract display text for UI
           if (agent.jsonOutput) {
-            // Try to capture result text
-            const rt = tryExtractResultText(trimmed);
-            if (rt) capturedResultText = rt;
+            // Capture authoritative result metadata (subtype, is_error) — used
+            // below to decide success, not just for UI display.
+            const meta = tryExtractResultMeta(trimmed);
+            if (meta) capturedResultMeta = meta;
 
             const displayText = extractDisplayText(trimmed);
             if (displayText) {
@@ -231,7 +279,7 @@ export function runCoderAgent(options: {
           resolve({
             success: false,
             status: 'failed',
-            changedFiles: [],
+            changedFiles: getNewlyChangedFiles(projectPath, dirtyBaseline),
             output: stdout,
             error: `${agent.name} timed out after 60 minutes`,
             agentUsed: agent.name,
@@ -244,8 +292,19 @@ export function runCoderAgent(options: {
         settled = true;
         clearTimeout(timer);
 
-        const changedFiles = getChangedFiles(projectPath);
-        console.log('[Coder] Process exited with code %d, changed files: %s', code, changedFiles.join(', ') || '(none)');
+        // Files changed by THIS invocation only (excludes pre-existing dirty).
+        const changedFiles = getNewlyChangedFiles(projectPath, dirtyBaseline);
+        const resultText = capturedResultMeta?.text ?? null;
+        const resultSubtype = capturedResultMeta?.subtype ?? null;
+        const resultIsError = capturedResultMeta?.isError ?? null;
+
+        console.log(
+          '[Coder] Process exited: code=%d, newly-changed=%d, result.subtype=%s, result.is_error=%s',
+          code,
+          changedFiles.length,
+          resultSubtype ?? '(none)',
+          resultIsError === null ? '(none)' : String(resultIsError),
+        );
 
         // If session resume failed, clear the session so next call starts fresh
         if (code !== 0 && sessionId && stderr.includes('session')) {
@@ -253,28 +312,44 @@ export function runCoderAgent(options: {
           clearSession(projectPath);
         }
 
-        if (code !== 0) {
-          if (changedFiles.length > 0) {
-            resolve({
-              success: true,
-              status: 'completed',
-              changedFiles,
-              output: stdout,
-              resultText: capturedResultText || undefined,
-              error: stderr || undefined,
-              agentUsed: agent.name,
-            });
-          } else {
-            resolve({
-              success: false,
-              status: 'failed',
-              changedFiles: [],
-              output: stdout,
-              resultText: capturedResultText || undefined,
-              error: stderr || `${agent.name} exited with code ${code}`,
-              agentUsed: agent.name,
-            });
-          }
+        // ---------------------------------------------------------------
+        // Strict success determination (no "changedFiles > 0" fallback).
+        //
+        // A run is ONLY considered successful when BOTH:
+        //   1. Process exited with code 0, AND
+        //   2. Either the CLI emitted a structured result with subtype="success"
+        //      and is_error !== true, OR the CLI did not emit any structured
+        //      result at all (non-JSON agents like raw shell cases).
+        //
+        // Any deviation (non-zero exit, is_error=true, error_* subtype such as
+        // error_max_turns / error_during_execution) is treated as failure,
+        // regardless of how many files were written. This prevents the prior
+        // false-positive where a mid-run crash left partial edits on disk and
+        // the runner wrongly reported success.
+        // ---------------------------------------------------------------
+        let success = code === 0;
+        let failureReason: string | null = null;
+
+        if (resultIsError === true) {
+          success = false;
+          failureReason = `Coder reported is_error=true${resultSubtype ? ` (subtype=${resultSubtype})` : ''}`;
+        } else if (resultSubtype && resultSubtype !== 'success') {
+          success = false;
+          failureReason = `Coder result subtype=${resultSubtype}`;
+        } else if (code !== 0) {
+          failureReason = `${agent.name} exited with code ${code}`;
+        }
+
+        if (!success) {
+          resolve({
+            success: false,
+            status: 'failed',
+            changedFiles,
+            output: stdout,
+            resultText: resultText || undefined,
+            error: stderr?.trim() || failureReason || `${agent.name} exited with code ${code}`,
+            agentUsed: agent.name,
+          });
           return;
         }
 
@@ -283,7 +358,7 @@ export function runCoderAgent(options: {
           status: 'completed',
           changedFiles,
           output: stdout,
-          resultText: capturedResultText || undefined,
+          resultText: resultText || undefined,
           agentUsed: agent.name,
         });
       });
