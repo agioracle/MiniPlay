@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { refreshPreview } from '../../process/preview-bridge';
 
 export const triggerBuildTool = tool({
-  description: 'Trigger an H5 build to refresh the preview. ONLY call this AFTER send_to_coder succeeds (returns success: true). Do NOT call if send_to_coder failed.',
+  description: 'Manual rebuild only. Call this ONLY when the user explicitly asks to rebuild / refresh preview / 重新构建 / 刷新预览 / 重新编译. Do NOT call this in the normal create-or-iterate flow — build runs automatically after send_to_coder succeeds.',
   inputSchema: zodSchema(z.object({})),
   execute: async () => {
     console.log('[trigger_build] Starting H5 build...');
