@@ -10,10 +10,13 @@ interface ProjectEntry {
 
 export function ProjectCard({
   project,
+  running = false,
   onClick,
   onDelete,
 }: {
   project: ProjectEntry
+  /** Whether a Coder task is actively running for this project. */
+  running?: boolean
   onClick: () => void
   onDelete: () => void
 }) {
@@ -38,6 +41,18 @@ export function ProjectCard({
           <span className="text-[11px] text-slate-400">{timeAgo}</span>
           <span className="text-[11px] text-slate-400">·</span>
           <span className="text-[11px] text-slate-400">v{project.versionCount}</span>
+          {running && (
+            // Use the app's warm coral accent (maps to --color-indigo-*) so
+            // the "Crafting" indicator harmonises with the overall warm
+            // palette instead of clashing with a cold emerald green.
+            <span className="ml-auto inline-flex items-center gap-1.5 text-[10px] font-medium text-indigo-600">
+              <span
+                className="w-2.5 h-2.5 rounded-full border-[1.5px] border-indigo-500 border-t-transparent animate-spin"
+                aria-hidden
+              />
+              Crafting
+            </span>
+          )}
         </div>
       </button>
 
