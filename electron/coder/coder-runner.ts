@@ -1,13 +1,11 @@
 import { spawn, execSync } from 'child_process';
 import * as path from 'path';
-import { SerialQueue } from './queue';
 import { buildCoderPrompt } from './prompt-builder';
 import { CODER_AGENTS, DEFAULT_CODER_AGENT, type CoderAgentId, type CoderAgentDef } from './agents';
 import { readConfig } from '../storage/config';
 import { getCoderBinaryPath } from '../hydration/env-cache';
 import { readSession, writeSession, clearSession } from './session';
-
-const queue = new SerialQueue();
+import { coderSessionManager } from './session-manager';
 
 export interface CoderResult {
   success: boolean;
@@ -145,7 +143,8 @@ function tryExtractResultMeta(jsonLine: string): CoderResultMeta | null {
 
 /**
  * Run the configured coder agent to modify code based on the GDD patch.
- * Enqueued to ensure serial execution (one agent at a time per project).
+ * Tasks for the same project are serialized via CoderSessionManager's
+ * per-project queue; different projects run in parallel.
  * Supports session persistence: resumes previous session for context continuity.
  */
 export function runCoderAgent(options: {
@@ -153,9 +152,31 @@ export function runCoderAgent(options: {
   summary: string;
   onStatus?: (status: string) => void;
   onOutput?: (line: string) => void;
+  /**
+   * Invoked synchronously at the instant the SerialQueue dequeues this task,
+   * immediately before the coder child process is spawned. Use this to
+   * register the in-flight batchId and emit the first user-visible events
+   * (e.g. `tool-call`, `launching` status). Runs inside the queue's critical
+   * section, so it is guaranteed to be serialized against prior same-project
+   * tasks' `finally` cleanup. Must be synchronous; errors are swallowed with
+   * a console.warn to avoid corrupting queue state.
+   */
+  onDequeue?: () => void;
 }): Promise<CoderResult> {
-  return queue.enqueue(async () => {
-    const { projectPath, summary, onStatus, onOutput } = options;
+  const { projectPath } = options;
+  return coderSessionManager.enqueue(projectPath, async (session) => {
+    // Fire once, synchronously, at the instant the queue hands control to us.
+    // This is the ONLY moment at which it is safe to register `currentBatchId`
+    // for this task: the previous same-project task's finally block has
+    // already cleared the slot. Errors are swallowed — a throwing callback
+    // only degrades cancel-attribution for this one run and must not corrupt
+    // the queue's running/pending bookkeeping.
+    try {
+      options.onDequeue?.();
+    } catch (err) {
+      console.warn('[Coder] onDequeue callback threw:', err);
+    }
+    const { summary, onStatus, onOutput } = options;
     const agent = getActiveAgent();
 
     console.log('[Coder] Using agent: %s (%s)', agent.name, agent.id);
@@ -210,6 +231,12 @@ export function runCoderAgent(options: {
         },
         stdio: ['pipe', 'pipe', 'pipe'],
       });
+
+      // Register the spawned child on the per-project session so
+      // `coder:cancel` can SIGTERM/SIGKILL it. We don't know the batchId at
+      // this layer (it's owned by the IPC caller), so pass null to keep
+      // whatever the caller already set.
+      coderSessionManager.setCurrentChild(projectPath, child, null);
 
       // Immediately close stdin to avoid "no stdin data received" warning
       child.stdin.end();
@@ -276,6 +303,7 @@ export function runCoderAgent(options: {
           settled = true;
           console.error('[Coder] Process timed out after 60 minutes');
           try { child.kill('SIGKILL'); } catch {}
+          coderSessionManager.setCurrentChild(projectPath, null, null);
           resolve({
             success: false,
             status: 'failed',
@@ -291,6 +319,7 @@ export function runCoderAgent(options: {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
+        coderSessionManager.setCurrentChild(projectPath, null, null);
 
         // Files changed by THIS invocation only (excludes pre-existing dirty).
         const changedFiles = getNewlyChangedFiles(projectPath, dirtyBaseline);
@@ -367,6 +396,7 @@ export function runCoderAgent(options: {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
+        coderSessionManager.setCurrentChild(projectPath, null, null);
         console.error('[Coder] Spawn error:', err.message);
         resolve({
           success: false,
@@ -378,10 +408,9 @@ export function runCoderAgent(options: {
         });
       });
 
-      // Kill on app exit
-      process.on('exit', () => {
-        try { child.kill(); } catch {}
-      });
+      // App-exit cleanup handled centrally by CoderSessionManager.killAll()
+      // in electron/main.ts. No per-spawn `process.on('exit')` needed here
+      // (would leak listeners on long-running sessions).
     });
   });
 }

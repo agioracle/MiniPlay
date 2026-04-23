@@ -11,8 +11,10 @@ export interface RightPanelHandle {
   switchToGdd: () => void
 }
 
-export const RightPanel = forwardRef<RightPanelHandle, { autoPreview?: boolean }>(
-  function RightPanel({ autoPreview = false }, ref) {
+export const RightPanel = forwardRef<
+  RightPanelHandle,
+  { autoPreview?: boolean; projectPath?: string | null }
+>(function RightPanel({ autoPreview = false, projectPath = null }, ref) {
     const [activeTab, setActiveTab] = useState<RightTab>('preview')
 
     useImperativeHandle(ref, () => ({
@@ -60,7 +62,7 @@ export const RightPanel = forwardRef<RightPanelHandle, { autoPreview?: boolean }
       {/* Content — both panels always mounted, toggle visibility via CSS */}
       <div className="flex-1 min-h-0 px-3 pb-3">
         <div className={`h-full bg-white rounded-2xl overflow-hidden card-shadow ${activeTab === 'preview' ? '' : 'hidden'}`}>
-          <LiveView autoPreview={autoPreview} />
+          <LiveView autoPreview={autoPreview} projectPath={projectPath} />
         </div>
         <div className={`h-full bg-white rounded-2xl overflow-hidden card-shadow ${activeTab === 'gdd' ? '' : 'hidden'}`}>
           <GddEditor visible={activeTab === 'gdd'} />

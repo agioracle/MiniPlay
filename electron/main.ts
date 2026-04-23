@@ -13,6 +13,7 @@ import { registerExportHandlers } from './ipc/export';
 import { registerAssetsHandlers } from './ipc/assets';
 import { ensureMiniPlayHome } from './storage/paths';
 import { teardownPreview } from './process/preview-bridge';
+import { coderSessionManager } from './coder/session-manager';
 import { initHydrationPath } from './hydration/index';
 import { runEnvDetection } from './hydration/env-cache';
 
@@ -94,9 +95,19 @@ app.whenReady().then(createWindow);
 
 app.on('window-all-closed', () => {
   teardownPreview();
+  // Kill every background Coder child process so we don't leak long-running
+  // agent sessions after the UI closes.
+  coderSessionManager.killAll();
   if (process.platform !== 'darwin') {
     app.quit();
   }
+});
+
+// Final-fallback cleanup in case the app exits without going through
+// `window-all-closed` (e.g. hard `app.quit()` from a menu action or a
+// forced SIGTERM from the OS).
+app.on('before-quit', () => {
+  coderSessionManager.killAll();
 });
 
 app.on('activate', () => {

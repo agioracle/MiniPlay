@@ -5,6 +5,7 @@ import { updateGddSection } from '../../project/gdd';
 import { getActiveProject } from '../../project/state';
 import { autoBuildAfterCoder, formatAutoBuildSummary } from '../../process/auto-build';
 import { BrowserWindow } from 'electron';
+import { coderSessionManager } from '../../coder/session-manager';
 
 const inputSchema = zodSchema(
   z.object({
@@ -12,6 +13,14 @@ const inputSchema = zodSchema(
   })
 );
 
+/**
+ * `send_to_coder` — GD Agent → Coder Agent bridge. Invoked inside a GD
+ * `streamText` turn, so the tool itself has no access to a projectPath
+ * argument. We resolve `projectPath` via `getActiveProject()` (since
+ * `create_project` must have already set it). All agent:stream events below
+ * are Coder-related and therefore routed through `coderSessionManager.emitEvent`
+ * — never `win.webContents.send('agent:stream', ...)` directly.
+ */
 export const sendToCoderTool = tool({
   description: 'Send the latest GDD patch to the Coder Agent for implementation. The Coder will read the GDD Latest Patch and modify source code accordingly. On success, this tool AUTOMATICALLY triggers an H5 build — you do NOT need to call trigger_build separately.',
   inputSchema,
@@ -30,56 +39,49 @@ export const sendToCoderTool = tool({
     }
 
     const win = BrowserWindow.getAllWindows()[0];
-    const coderToolCallId = `coder_${Date.now()}`;
+    // Globally-unique batchId (replaces legacy `coder_${Date.now()}`).
+    const batchId = coderSessionManager.startBatch(projectPath);
+
+    const emit = (
+      type: 'status' | 'output' | 'tool-call' | 'tool-result' | 'agent-message',
+      payload: Record<string, unknown>,
+    ) => {
+      coderSessionManager.emitEvent(projectPath, {
+        batchId,
+        type,
+        payload,
+      });
+    };
 
     const sendCoderStatus = (status: string) => {
-      if (win) {
-        win.webContents.send('agent:stream', {
-          type: 'coder-status',
-          toolCallId: coderToolCallId,
-          batchId: coderToolCallId,
-          text: status,
-        });
-      }
+      emit('status', { toolCallId: batchId, text: status });
     };
     const sendOutput = (line: string) => {
-      if (win) {
-        win.webContents.send('agent:stream', {
-          type: 'coder-output',
-          batchId: coderToolCallId,
-          text: line,
-        });
-      }
+      emit('output', { text: line });
     };
 
     try {
-      // Emit a batch-identified tool-call so ChatPanel creates a new coder bubble
-      if (win) {
-        win.webContents.send('agent:stream', {
-          type: 'tool-call',
-          toolCallId: coderToolCallId,
-          toolName: 'send_to_coder',
-          batchId: coderToolCallId,
-        });
-      }
-      sendCoderStatus('launching');
-      console.log('[send_to_coder] Launching coder agent...');
-
       const result = await runCoderAgent({
         projectPath,
         summary: input.summary,
         onStatus: (status) => sendCoderStatus(status),
         onOutput: sendOutput,
+        onDequeue: () => {
+          // Register batchId + first visible events at dequeue time so
+          // `coder:cancel` can correctly attribute the `__cancelled` marker
+          // to THIS batch even if another same-project task is already
+          // queued behind. This path previously had NO `setCurrentBatchId`
+          // call at all, so cancel used to silently miss send_to_coder runs.
+          coderSessionManager.setCurrentBatchId(projectPath, batchId);
+          emit('tool-call', { toolCallId: batchId, toolName: 'send_to_coder' });
+          sendCoderStatus('launching');
+          console.log('[send_to_coder] Launching coder agent...');
+        },
       });
 
       sendCoderStatus(result.success ? 'done' : 'failed');
-      // Send done event with batchId so frontend marks the coder batch as completed
-      if (win) {
-        win.webContents.send('agent:stream', {
-          type: 'done',
-          batchId: coderToolCallId,
-        });
-      }
+      // Mark the batch as done.
+      emit('tool-result', { toolCallId: batchId });
       console.log('[send_to_coder] Coder result: %s, changed files: %s', result.status, result.changedFiles.join(', ') || '(none)');
       if (result.error) console.error('[send_to_coder] Coder error:', result.error);
 
@@ -108,9 +110,10 @@ export const sendToCoderTool = tool({
       let buildSummary = '';
       if (result.success) {
         const buildResult = await autoBuildAfterCoder({
+          projectPath,
           win,
-          batchId: coderToolCallId,
-          toolCallId: `build_auto_${coderToolCallId}`,
+          batchId,
+          toolCallId: `build_auto_${batchId}`,
         });
         buildSummary = formatAutoBuildSummary(buildResult);
       }

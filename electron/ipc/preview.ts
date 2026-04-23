@@ -55,11 +55,29 @@ async function flushErrors(win?: BrowserWindow) {
 }
 
 export function registerPreviewHandlers() {
-  /** Trigger a build + preview refresh */
-  ipcMain.handle('preview:refresh', async (event) => {
-    const win = BrowserWindow.fromWebContents(event.sender) || undefined;
-    return refreshPreview(win);
-  });
+  /**
+   * Trigger a build + preview refresh.
+   *
+   * `projectPath` MUST be provided when the caller targets a specific
+   * project (e.g. a background build on resume). When absent we fall back
+   * to the active project to preserve the legacy behavior of the
+   * user-initiated "Refresh Preview" button.
+   */
+  ipcMain.handle(
+    'preview:refresh',
+    async (event, payload: { projectPath?: string } | undefined) => {
+      const win = BrowserWindow.fromWebContents(event.sender) || undefined;
+      const projectPath = payload?.projectPath || getActiveProject();
+      if (!projectPath) {
+        return {
+          success: false,
+          error: 'No active project',
+          buildDuration: 0,
+        };
+      }
+      return refreshPreview(projectPath, win);
+    },
+  );
 
   /** Get current preview state */
   ipcMain.handle('preview:state', async () => {

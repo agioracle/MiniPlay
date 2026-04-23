@@ -81,6 +81,13 @@ export async function runGdAgentTurn(
     }
   }
 
+  // NOTE: GD Agent events do NOT flow through CoderSessionManager — the GD
+  // agent may run before any project exists, so there is no session to
+  // attach buffers to. We still annotate every payload with `projectPath`
+  // (possibly `null`) so the renderer can filter by its current view and
+  // avoid cross-session leakage.
+  const ownerProject = projectPath ?? null;
+
   const result = streamText({
     model,
     system: systemPrompt,
@@ -92,6 +99,7 @@ export async function runGdAgentTurn(
         win.webContents.send('agent:stream', {
           type: 'text-delta',
           text: chunk.text,
+          projectPath: ownerProject,
         });
       } else if (chunk.type === 'tool-call') {
         console.log('[GD Agent] Tool call: %s (id: %s)', chunk.toolName, chunk.toolCallId);
@@ -100,6 +108,7 @@ export async function runGdAgentTurn(
           toolCallId: chunk.toolCallId,
           toolName: chunk.toolName,
           args: chunk.input,
+          projectPath: ownerProject,
         });
       } else if (chunk.type === 'tool-result') {
         console.log('[GD Agent] Tool result: %s', chunk.toolCallId);
@@ -107,6 +116,7 @@ export async function runGdAgentTurn(
           type: 'tool-result',
           toolCallId: chunk.toolCallId,
           result: chunk.output,
+          projectPath: ownerProject,
         });
 
         // Notify frontend when GDD has been updated so it can refresh the GDD editor
@@ -116,6 +126,7 @@ export async function runGdAgentTurn(
           console.log('[GD Agent] GDD updated — sending gdd-updated event');
           win.webContents.send('agent:stream', {
             type: 'gdd-updated',
+            projectPath: ownerProject,
           });
         }
       }
@@ -142,7 +153,7 @@ export async function runGdAgentTurn(
     }
   }
 
-  win.webContents.send('agent:stream', { type: 'done', text });
+  win.webContents.send('agent:stream', { type: 'done', text, projectPath: ownerProject });
   console.log('[GD Agent] Turn done. Text: %d chars, Tool calls: %d, Tool results: %d', text.length, allToolCalls.length, allToolResults.length);
 
   return { text, toolCalls: allToolCalls, toolResults: allToolResults };

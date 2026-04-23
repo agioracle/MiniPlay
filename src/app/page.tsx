@@ -12,6 +12,7 @@ import { HeroSection } from '@/components/HeroSection'
 import { SettingsDialog } from '@/components/SettingsDialog'
 import type { Message } from '@/components/ChatMessage'
 import type { ImageAttachment } from '@/components/ChatInput'
+import { sessionStore } from '@/lib/sessionStore'
 
 type AppView = 'loading' | 'setup' | 'env-check' | 'home' | 'workspace'
 type ProjectPhase = 'gd' | 'code'
@@ -32,6 +33,18 @@ export default function Home() {
   const [deleteConfirm, setDeleteConfirm] = useState<ProjectEntry | null>(null)
   const [projectPhase, setProjectPhase] = useState<ProjectPhase>('gd')
   const [settingsOpen, setSettingsOpen] = useState(false)
+  /**
+   * The project currently foregrounded in the workspace view.
+   * `null` on home and during the pre-project GD phase (no project exists yet).
+   */
+  const [activeProjectPath, setActiveProjectPath] = useState<string | null>(null)
+  /**
+   * Projects that currently have a running Coder task. Driven by the
+   * `coder:running-changed` broadcast plus an initial `coder:running-list`
+   * fetch when the home view mounts. Used to render the Running badge on
+   * ProjectCard.
+   */
+  const [runningPaths, setRunningPaths] = useState<Set<string>>(new Set())
   const rightPanelRef = useRef<RightPanelHandle>(null)
 
   const handleGddUpdated = useCallback(() => {
@@ -67,9 +80,37 @@ export default function Home() {
     init()
   }, [])
 
+  // Subscribe to the global running-list broadcast once, regardless of view.
+  // Keeping this at the top level means we never miss a transition (e.g. a
+  // Coder task finishing while the user is on the home screen).
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.miniplay) return
+
+    let disposed = false
+
+    // Seed with the current snapshot so the badge is correct immediately,
+    // not only after the next change.
+    window.miniplay.coderRunningList?.().then((res) => {
+      if (disposed) return
+      if (res && Array.isArray(res.runningPaths)) {
+        setRunningPaths(new Set(res.runningPaths))
+      }
+    }).catch(() => { /* best-effort */ })
+
+    const unsub = window.miniplay.onCoderRunningChanged?.((data) => {
+      setRunningPaths(new Set(data.runningPaths || []))
+    })
+
+    return () => {
+      disposed = true
+      unsub?.()
+    }
+  }, [])
+
   const handleNewGame = useCallback(() => {
     setRestoredMessages(null)
     setProjectPhase('gd')
+    setActiveProjectPath(null)
     setView('workspace')
   }, [])
 
@@ -95,6 +136,15 @@ export default function Home() {
       }))
       setRestoredMessages(msgs)
       setProjectPhase('code') // Existing project → skip PM, go directly to Code Agent
+      setActiveProjectPath(data.projectPath)
+      // `data.hasRunningCoder` is surfaced by the backend as a hint that a
+      // Coder task is still in-flight for this project. The ChatPanel will
+      // hydrate from CoderBuffer on mount either way (it always calls
+      // `coder:subscribe`), so we don't need to branch on it here — but we
+      // log it for observability while diagnosing parallel-session issues.
+      if (data.hasRunningCoder) {
+        console.log('[Home] Opening project with running Coder:', data.projectPath)
+      }
       setView('workspace')
     } catch (err) {
       console.error('Failed to open project:', err)
@@ -104,10 +154,16 @@ export default function Home() {
   const handleBackToHome = useCallback(async () => {
     setRestoredMessages(null)
     setProjectPhase('gd')
-    // Close active project — clears state and stops preview server
-    window.miniplay?.projectClose?.()
-    // Clear any buffered pre-project messages
+    // Deactivate (not close): keep the CoderSession alive in the background,
+    // only drop foreground state and stop the Vite preview server. A running
+    // Coder task will continue writing to its buffer; the badge on the home
+    // card will remain green until the task finishes.
+    window.miniplay?.projectDeactivate?.()
+    // Clear any buffered pre-project messages (those keyed to `__none__`).
+    // Project-scoped pendingMessages are retained so they flush next time we
+    // open that project.
     window.miniplay?.agentClearPending?.()
+    setActiveProjectPath(null)
     if (window.miniplay?.projectList) {
       const list = await window.miniplay.projectList()
       setProjects(list)
@@ -118,9 +174,24 @@ export default function Home() {
   const handleDeleteProject = useCallback(async (project: ProjectEntry) => {
     if (!window.miniplay?.projectDelete) return
     try {
+      // projectDelete goes through the full close-then-delete path in the
+      // backend: it kills the CoderSession first (SIGTERM → 3s → SIGKILL),
+      // then removes files. That ordering is critical to avoid the
+      // child-writing-to-deleted-dir race.
       const result = await window.miniplay.projectDelete(project.path)
       if (result.success) {
         setProjects(prev => prev.filter(p => p.path !== project.path))
+        setRunningPaths(prev => {
+          if (!prev.has(project.path)) return prev
+          const next = new Set(prev)
+          next.delete(project.path)
+          return next
+        })
+        // Drop renderer-side in-memory session state so the deleted project's
+        // batches/transcript don't linger until a full reload. The backend has
+        // already cleared its CoderBuffer via closeSession; this takes care of
+        // the renderer mirror.
+        sessionStore.forgetProject(project.path)
       } else {
         console.error('Failed to delete project:', result.error)
       }
@@ -140,6 +211,15 @@ export default function Home() {
     if (result.projectCreated) {
       console.log('[Phase] Project created → switching to Code Agent phase')
       setProjectPhase('code')
+      // After `create_project` runs, ask the backend for the freshly-bound
+      // active project so ChatPanel/RightPanel can re-key their session
+      // state from the sentinel `__none__` bucket to the real path.
+      try {
+        const active = await window.miniplay.projectActive?.()
+        if (active) setActiveProjectPath(active)
+      } catch {
+        // best-effort
+      }
     }
     return result
   }, [])
@@ -227,6 +307,7 @@ export default function Home() {
                 <ProjectCard
                   key={p.path}
                   project={p}
+                  running={runningPaths.has(p.path)}
                   onClick={() => handleOpenProject(p)}
                   onDelete={() => setDeleteConfirm(p)}
                 />
@@ -259,6 +340,14 @@ export default function Home() {
                 </p>
                 <p className="text-xs text-slate-400 mb-5">
                   This will permanently remove all project files, conversation history, and version history.
+                  {runningPaths.has(deleteConfirm.path) && (
+                    <>
+                      {' '}
+                      <span className="text-amber-600">
+                        A Coder task is currently running — it will be terminated first.
+                      </span>
+                    </>
+                  )}
                 </p>
                 <div className="flex justify-end gap-2">
                   <button
@@ -294,10 +383,15 @@ export default function Home() {
             onGddConfirm={handleGdSend}
             projectPhase={projectPhase}
             onGddUpdated={handleGddUpdated}
+            projectPath={activeProjectPath}
           />
         </div>
         <div className="w-[60%]">
-          <RightPanel ref={rightPanelRef} autoPreview={restoredMessages !== null} />
+          <RightPanel
+            ref={rightPanelRef}
+            autoPreview={restoredMessages !== null}
+            projectPath={activeProjectPath}
+          />
         </div>
       </main>
     </div>

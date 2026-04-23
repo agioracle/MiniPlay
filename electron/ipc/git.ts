@@ -51,7 +51,7 @@ export function registerGitHandlers() {
     if (result.success) {
       // Rebuild and refresh preview at this version
       const win = BrowserWindow.fromWebContents(event.sender) || undefined;
-      await refreshPreview(win);
+      await refreshPreview(projectPath, win);
     }
 
     return result;
@@ -65,7 +65,7 @@ export function registerGitHandlers() {
     const result = returnToLatest(projectPath);
     if (result.success) {
       const win = BrowserWindow.fromWebContents(event.sender) || undefined;
-      await refreshPreview(win);
+      await refreshPreview(projectPath, win);
     }
 
     return result;

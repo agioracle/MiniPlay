@@ -1,5 +1,6 @@
 import type { BrowserWindow } from 'electron';
 import { refreshPreview } from './preview-bridge';
+import { coderSessionManager } from '../coder/session-manager';
 
 /**
  * Result payload shape emitted for the `build_auto` tool-result event.
@@ -12,10 +13,19 @@ export interface AutoBuildResult {
   error?: string;
   buildDuration?: number;
   selfHealed?: boolean;
+  /** True when the build produced artifacts but the project is not in foreground, so no vite serve was started. */
+  builtIdle?: boolean;
 }
 
 export interface AutoBuildOptions {
-  /** Electron main window used to dispatch agent:stream events. */
+  /**
+   * Project this build belongs to. REQUIRED — vite serve will only start if
+   * this project is currently the foreground (active) one, but the build
+   * itself always runs to keep `dist-h5` fresh for when the user switches
+   * back.
+   */
+  projectPath: string;
+  /** Electron main window used to dispatch agent:stream events (for broadcast fallback paths). */
   win: BrowserWindow | null | undefined;
   /** Batch id attached to every agent:stream event so the UI can group them. */
   batchId: string;
@@ -28,42 +38,46 @@ export interface AutoBuildOptions {
  *
  * Responsibilities:
  *   - Emit a `tool-call` event (toolName=`trigger_build`) to mark build start in UI.
- *   - Invoke `refreshPreview()` which handles build + vite server + self-heal.
+ *   - Invoke `refreshPreview(projectPath, win)` which handles build + vite server + self-heal.
+ *     Build always runs; vite serve only starts when the project is foreground.
  *   - Emit a `tool-result` event with the full build result so the UI can show
  *     duration / preview URL / error details.
  *   - Never throw: any exception from `refreshPreview` is caught and surfaced
  *     via the `tool-result` event's `result.error`.
  *
- * Event channel: `agent:stream` (payload carries `batchId`).
- * This matches the existing protocol used by `send-to-coder.ts` and `ipc/coder.ts`.
+ * Event channel: `agent:stream`, routed exclusively through
+ * `coderSessionManager.emitEvent(projectPath, ...)` — never call
+ * `webContents.send('agent:stream', ...)` directly, otherwise events will not
+ * be captured in the CoderBuffer and cross-project replay will break.
  */
 export async function autoBuildAfterCoder(
   options: AutoBuildOptions,
 ): Promise<AutoBuildResult> {
-  const { win, batchId } = options;
+  const { projectPath, win, batchId } = options;
   const toolCallId = options.toolCallId || `build_auto_${batchId}`;
 
-  console.log('[auto-build] starting (batchId=%s)...', batchId);
+  console.log('[auto-build] starting (project=%s, batchId=%s)...', projectPath, batchId);
 
-  if (win) {
-    win.webContents.send('agent:stream', {
-      type: 'tool-call',
+  coderSessionManager.emitEvent(projectPath, {
+    batchId,
+    type: 'tool-call',
+    payload: {
       toolCallId,
       toolName: 'trigger_build',
-      batchId,
-    });
-  }
+    },
+  });
 
   let result: AutoBuildResult;
   try {
-    const buildResult = await refreshPreview(win || undefined);
+    const buildResult = await refreshPreview(projectPath, win || undefined);
     result = buildResult;
     const durationSec = ((buildResult.buildDuration || 0) / 1000).toFixed(1);
     console.log(
-      '[auto-build] %s (%ss)%s',
+      '[auto-build] %s (%ss)%s%s',
       buildResult.success ? 'success' : 'failed',
       durationSec,
       buildResult.selfHealed ? ' [self-healed]' : '',
+      buildResult.builtIdle ? ' [built-idle: background project]' : '',
     );
   } catch (err: any) {
     const message = err?.message || String(err);
@@ -71,14 +85,14 @@ export async function autoBuildAfterCoder(
     result = { success: false, error: message };
   }
 
-  if (win) {
-    win.webContents.send('agent:stream', {
-      type: 'tool-result',
+  coderSessionManager.emitEvent(projectPath, {
+    batchId,
+    type: 'tool-result',
+    payload: {
       toolCallId,
       result,
-      batchId,
-    });
-  }
+    },
+  });
 
   return result;
 }
@@ -93,6 +107,7 @@ export function formatAutoBuildSummary(result: AutoBuildResult): string {
     const durationSec = ((result.buildDuration || 0) / 1000).toFixed(1);
     const parts = [` Build completed in ${durationSec}s`];
     if (result.url) parts.push(`, preview at ${result.url}`);
+    else if (result.builtIdle) parts.push(' (background project — serve deferred)');
     if (result.selfHealed) parts.push(' (self-healed)');
     parts.push('.');
     return parts.join('');

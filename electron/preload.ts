@@ -30,7 +30,7 @@ export interface CoderDetectResult {
 }
 
 export interface AgentStreamEvent {
-  type: 'text-delta' | 'tool-call' | 'tool-result' | 'coder-status' | 'coder-output' | 'gdd-updated' | 'done' | 'error';
+  type: 'text-delta' | 'tool-call' | 'tool-result' | 'coder-status' | 'coder-output' | 'gdd-updated' | 'done' | 'error' | 'status' | 'output' | 'agent-message';
   text?: string;
   toolCallId?: string;
   toolName?: string;
@@ -38,6 +38,38 @@ export interface AgentStreamEvent {
   result?: unknown;
   error?: string;
   batchId?: string;
+  /**
+   * Owning project for this event. Set to `null` only for pre-project GD
+   * agent events (before `create_project` runs). Coder/auto-build/self-heal
+   * events always carry a concrete path. Renderers filter by
+   * `event.projectPath !== currentProject` to avoid cross-project leakage.
+   */
+  projectPath?: string | null;
+  /**
+   * Global monotonically increasing sequence number assigned by
+   * `CoderSessionManager.emitEvent`. Only present on Coder-related events.
+   * The renderer uses this to dedupe the subscribe-snapshot against the live
+   * `agent:stream` tail.
+   */
+  seq?: number;
+}
+
+/**
+ * A buffered Coder event as returned by `coder:subscribe`. Mirrors the
+ * `BufferedEvent` shape defined in `electron/coder/coder-buffer.ts`.
+ */
+export interface BufferedCoderEvent {
+  seq: number;
+  batchId: string | null;
+  type: 'status' | 'output' | 'tool-call' | 'tool-result' | 'agent-message';
+  payload: Record<string, unknown>;
+  at: number;
+}
+
+export interface CoderBufferSnapshot {
+  events: BufferedCoderEvent[];
+  lastSeq: number;
+  batches: Array<{ batchId: string; started: boolean; done: boolean; status: string | null }>;
 }
 
 export interface StoredMessage {
@@ -88,14 +120,25 @@ export interface MiniPlayAPI {
   onAgentStream: (callback: (event: AgentStreamEvent) => void) => () => void;
 
   // Coder Agent (direct mode — code phase)
-  coderSend: (payload: { message: string; images?: Array<{ name: string; mimeType: string; base64: string }> }) => Promise<{ success: boolean; text?: string; changedFiles?: string[]; error?: string }>;
+  coderSend: (payload: { message: string; images?: Array<{ name: string; mimeType: string; base64: string }>; projectPath?: string }) => Promise<{ success: boolean; text?: string; changedFiles?: string[]; error?: string }>;
+  /** Cancel the running Coder task for a project (SIGTERM → 3s → SIGKILL) and drop its pending queue. */
+  coderCancel: (payload?: { projectPath?: string }) => Promise<{ cancelled: boolean; error?: string }>;
+  /** Snapshot the CoderBuffer for replay after mounting/switching projects. Caller MUST attach onAgentStream first. */
+  coderSubscribe: (payload?: { projectPath?: string }) => Promise<CoderBufferSnapshot>;
+  /** Snapshot of project paths currently running a Coder task. */
+  coderRunningList: () => Promise<{ runningPaths: string[] }>;
+  /** Broadcast whenever the running-list changes (task started / finished / cancelled). */
+  onCoderRunningChanged: (callback: (data: { runningPaths: string[] }) => void) => () => void;
 
   // Projects
   projectList: () => Promise<ProjectEntry[]>;
-  projectOpen: (projectPath: string) => Promise<{ projectPath: string; messages: StoredMessage[]; gdd: string; versions: unknown; error?: string }>;
+  projectOpen: (projectPath: string) => Promise<{ projectPath: string; messages: StoredMessage[]; gdd: string; versions: unknown; hasRunningCoder?: boolean; error?: string }>;
   projectActive: () => Promise<string | null>;
-  projectClose: () => Promise<{ success: boolean }>;
-  projectResumePreview: () => Promise<{ success: boolean; url?: string; error?: string }>;
+  /** Leave the current foreground project but keep its CoderSession running in background. Used when returning to home. */
+  projectDeactivate: () => Promise<{ success: boolean }>;
+  /** Fully close a project: deactivate + kill its CoderSession. Files on disk are preserved. */
+  projectClose: (payload?: { projectPath?: string }) => Promise<{ success: boolean }>;
+  projectResumePreview: (payload?: { projectPath?: string }) => Promise<{ success: boolean; url?: string; error?: string; builtIdle?: boolean }>;
   projectDelete: (projectPath: string) => Promise<{ success: boolean; error?: string }>;
 
   // Coder Agent
@@ -103,13 +146,13 @@ export interface MiniPlayAPI {
   coderDetectAll: () => Promise<CoderDetectResult[]>;
 
   // Preview
-  previewRefresh: () => Promise<{ success: boolean; url?: string; error?: string }>;
+  previewRefresh: (payload?: { projectPath?: string }) => Promise<{ success: boolean; url?: string; error?: string; builtIdle?: boolean }>;
   previewState: () => Promise<{ running: boolean; port: number; url: string | null }>;
   previewStop: () => Promise<{ success: boolean }>;
   previewToggleDevtools: () => Promise<{ success: boolean }>;
-  onPreviewStatus: (callback: (data: { status: string; url?: string; error?: string }) => void) => () => void;
-  onPreviewRefresh: (callback: (data: { url: string }) => void) => () => void;
-  previewRuntimeError: (data: { message?: string; source?: string; line?: number; stack?: string }) => Promise<{ handled: boolean; attempts: number }>;
+  onPreviewStatus: (callback: (data: { status: string; url?: string; error?: string; projectPath?: string }) => void) => () => void;
+  onPreviewRefresh: (callback: (data: { url: string; projectPath?: string }) => void) => () => void;
+  previewRuntimeError: (data: { message?: string; source?: string; line?: number; stack?: string }) => Promise<{ handled: boolean; attempts?: number; batched?: boolean }>;
 
   // GDD
   gddRead: () => Promise<{ content: string; error?: string }>;
@@ -158,8 +201,16 @@ const api: MiniPlayAPI = {
     ipcRenderer.invoke('agent:send', payload),
   agentHistory: (projectPath: string) => ipcRenderer.invoke('agent:history', projectPath),
   agentClearPending: () => ipcRenderer.invoke('agent:clear-pending'),
-  coderSend: (payload: { message: string; images?: Array<{ name: string; mimeType: string; base64: string }> }) =>
+  coderSend: (payload: { message: string; images?: Array<{ name: string; mimeType: string; base64: string }>; projectPath?: string }) =>
     ipcRenderer.invoke('coder:send', payload),
+  coderCancel: (payload?: { projectPath?: string }) => ipcRenderer.invoke('coder:cancel', payload),
+  coderSubscribe: (payload?: { projectPath?: string }) => ipcRenderer.invoke('coder:subscribe', payload),
+  coderRunningList: () => ipcRenderer.invoke('coder:running-list'),
+  onCoderRunningChanged: (callback: (data: { runningPaths: string[] }) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, data: { runningPaths: string[] }) => callback(data);
+    ipcRenderer.on('coder:running-changed', handler);
+    return () => ipcRenderer.removeListener('coder:running-changed', handler);
+  },
   onAgentStream: (callback: (event: AgentStreamEvent) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, data: AgentStreamEvent) =>
       callback(data);
@@ -170,23 +221,24 @@ const api: MiniPlayAPI = {
   projectList: () => ipcRenderer.invoke('project:list'),
   projectOpen: (projectPath: string) => ipcRenderer.invoke('project:open', projectPath),
   projectActive: () => ipcRenderer.invoke('project:active'),
-  projectClose: () => ipcRenderer.invoke('project:close'),
-  projectResumePreview: () => ipcRenderer.invoke('project:resume-preview'),
+  projectDeactivate: () => ipcRenderer.invoke('project:deactivate'),
+  projectClose: (payload?: { projectPath?: string }) => ipcRenderer.invoke('project:close', payload),
+  projectResumePreview: (payload?: { projectPath?: string }) => ipcRenderer.invoke('project:resume-preview', payload),
   projectDelete: (projectPath: string) => ipcRenderer.invoke('project:delete', projectPath),
 
   coderDetect: () => ipcRenderer.invoke('coder:detect'),
   coderDetectAll: () => ipcRenderer.invoke('coder:detect-all'),
 
-  previewRefresh: () => ipcRenderer.invoke('preview:refresh'),
+  previewRefresh: (payload?: { projectPath?: string }) => ipcRenderer.invoke('preview:refresh', payload),
   previewState: () => ipcRenderer.invoke('preview:state'),
   previewStop: () => ipcRenderer.invoke('preview:stop'),
   previewToggleDevtools: () => ipcRenderer.invoke('preview:toggle-devtools'),
-  onPreviewStatus: (callback: (data: { status: string; url?: string; error?: string }) => void) => {
+  onPreviewStatus: (callback: (data: { status: string; url?: string; error?: string; projectPath?: string }) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, data: any) => callback(data);
     ipcRenderer.on('preview:status', handler);
     return () => ipcRenderer.removeListener('preview:status', handler);
   },
-  onPreviewRefresh: (callback: (data: { url: string }) => void) => {
+  onPreviewRefresh: (callback: (data: { url: string; projectPath?: string }) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, data: any) => callback(data);
     ipcRenderer.on('preview:refresh', handler);
     return () => ipcRenderer.removeListener('preview:refresh', handler);

@@ -6,37 +6,57 @@ import { selfHeal } from './self-heal';
 import { getActiveProject } from '../project/state';
 
 /**
- * Full preview cycle: build H5 → start/restart preview server → notify renderer.
- * If build fails, automatically triggers self-healing (up to 3 retries).
+ * Refresh the preview for a specific project.
+ *
+ * **Explicit-projectPath contract**: callers MUST pass the project they want
+ * refreshed. This function never calls `getActiveProject()` internally
+ * because it may be invoked for BACKGROUND projects (via
+ * `autoBuildAfterCoder` after a background Coder run finishes). Relying on
+ * the foreground active project at event-emission time would misroute
+ * preview events to the wrong project.
+ *
+ * **Build/serve decoupling**:
+ *  - The H5 build ALWAYS runs for `projectPath` (refreshing `dist-h5/`).
+ *  - The Vite/static preview server is only (re)started when
+ *    `projectPath === getActiveProject()` — only the foreground project
+ *    serves a preview. For background projects we emit
+ *    `preview:status { status: 'built-idle', projectPath }` instead; the UI
+ *    can then light up a "built, not served" indicator and `project:open`
+ *    will reuse the built artefacts via `project:resume-preview`.
+ *
+ * All `preview:status` / `preview:refresh` / runtime-error events emitted
+ * from this module carry `projectPath` so the LiveView can filter.
  */
-export async function refreshPreview(win?: BrowserWindow): Promise<{
+export async function refreshPreview(
+  projectPath: string,
+  win?: BrowserWindow,
+): Promise<{
   success: boolean;
   url?: string;
   error?: string;
   buildDuration?: number;
   selfHealed?: boolean;
+  builtIdle?: boolean;
 }> {
-  const projectPath = getActiveProject();
   if (!projectPath) {
-    return { success: false, error: 'No active project' };
+    return { success: false, error: 'refreshPreview called without projectPath' };
   }
 
   const mainWin = win || BrowserWindow.getAllWindows()[0];
+  const sendStatus = (payload: Record<string, unknown>) => {
+    mainWin?.webContents.send('preview:status', { ...payload, projectPath });
+  };
 
-  // Step 1: Build H5
-  mainWin?.webContents.send('preview:status', { status: 'building' });
+  // Step 1: Build H5 (runs for background projects too — keeps dist-h5 fresh)
+  sendStatus({ status: 'building' });
 
   const buildResult = await runH5Build(projectPath);
 
   if (!buildResult.success) {
-    // Parse errors and attempt self-healing
     const errors = parseBuildError(buildResult.error || buildResult.output);
 
     if (errors.length > 0) {
-      mainWin?.webContents.send('preview:status', {
-        status: 'self-healing',
-        error: errors[0]?.message,
-      });
+      sendStatus({ status: 'self-healing', error: errors[0]?.message });
 
       const healResult = await selfHeal({
         errors,
@@ -45,19 +65,22 @@ export async function refreshPreview(win?: BrowserWindow): Promise<{
       });
 
       if (healResult.success) {
+        // Self-heal succeeded — the healing path already started the server
+        // when foreground. Determine URL for foreground case.
+        const isForeground = projectPath === getActiveProject();
         return {
           success: true,
-          url: `http://localhost:5173`,
+          url: isForeground ? 'http://localhost:5173' : undefined,
           buildDuration: buildResult.duration,
           selfHealed: true,
+          builtIdle: !isForeground,
         };
       }
 
-      // Self-healing failed — report to user
       const errorSummary = (healResult.finalErrors || errors)
         .map(e => e.message)
         .join('; ');
-      mainWin?.webContents.send('preview:status', {
+      sendStatus({
         status: 'build-failed',
         error: `Auto-fix failed after ${healResult.attempts} attempts: ${errorSummary}`,
       });
@@ -68,10 +91,7 @@ export async function refreshPreview(win?: BrowserWindow): Promise<{
       };
     }
 
-    mainWin?.webContents.send('preview:status', {
-      status: 'build-failed',
-      error: buildResult.error,
-    });
+    sendStatus({ status: 'build-failed', error: buildResult.error });
     return {
       success: false,
       error: buildResult.error,
@@ -79,14 +99,25 @@ export async function refreshPreview(win?: BrowserWindow): Promise<{
     };
   }
 
-  // Step 2: Start/restart preview server
-  mainWin?.webContents.send('preview:status', { status: 'starting-server' });
+  // Step 2: (Re)start the preview server only when this is the foreground
+  // project. Background projects get `built-idle` instead.
+  const isForeground = projectPath === getActiveProject();
+  if (!isForeground) {
+    sendStatus({ status: 'built-idle' });
+    return {
+      success: true,
+      buildDuration: buildResult.duration,
+      builtIdle: true,
+    };
+  }
+
+  sendStatus({ status: 'starting-server' });
 
   try {
     const url = await startVitePreview(projectPath);
 
-    mainWin?.webContents.send('preview:status', { status: 'ready', url });
-    mainWin?.webContents.send('preview:refresh', { url });
+    sendStatus({ status: 'ready', url });
+    mainWin?.webContents.send('preview:refresh', { url, projectPath });
 
     return {
       success: true,
@@ -94,10 +125,7 @@ export async function refreshPreview(win?: BrowserWindow): Promise<{
       buildDuration: buildResult.duration,
     };
   } catch (err: any) {
-    mainWin?.webContents.send('preview:status', {
-      status: 'server-failed',
-      error: err.message,
-    });
+    sendStatus({ status: 'server-failed', error: err.message });
     return {
       success: false,
       error: `Preview server failed: ${err.message}`,

@@ -97,6 +97,38 @@ function injectErrorCapture(projectPath: string): void {
 }
 
 /**
+ * Write a serve.json into dist-h5/ so `npx serve` responds with
+ * `Cache-Control: no-store` for every asset.
+ *
+ * Why: all projects are served from `http://localhost:5173` with identical
+ * asset names (`index.html`, `game.js`, …). Without no-store, Electron's
+ * shared HTTP cache happily replays the first project's bundle for every
+ * subsequent project, producing the "always shows the first game" bug.
+ */
+function writeServeConfig(projectPath: string): void {
+  const distH5 = path.join(projectPath, 'dist-h5');
+  if (!fs.existsSync(distH5)) return;
+  const cfgPath = path.join(distH5, 'serve.json');
+  const cfg = {
+    headers: [
+      {
+        source: '**/*',
+        headers: [
+          { key: 'Cache-Control', value: 'no-store, no-cache, must-revalidate' },
+          { key: 'Pragma', value: 'no-cache' },
+          { key: 'Expires', value: '0' },
+        ],
+      },
+    ],
+  };
+  try {
+    fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2), 'utf-8');
+  } catch {
+    // best-effort — preview will still work, just cached
+  }
+}
+
+/**
  * Ensure dist-h5/index.html exists for Vite preview.
  * If phaser-wx build doesn't produce one, create a minimal one.
  */
@@ -162,6 +194,7 @@ export async function startVitePreview(projectPath: string): Promise<string> {
 
   ensureIndexHtml(projectPath);
   injectErrorCapture(projectPath);
+  writeServeConfig(projectPath);
 
   const port = await findAvailablePort(5173);
   currentPort = port;

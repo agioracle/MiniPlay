@@ -5,10 +5,28 @@ import { getActiveProject } from '../project/state';
 import type { ModelMessage } from 'ai';
 
 /**
- * In-memory buffer for messages sent before a project exists.
- * Flushed to project's conversations.jsonl once create_project sets activeProject.
+ * In-memory buffers for messages sent before (or outside of) a project
+ * context. Keyed by projectPath so parallel GD threads targeting different
+ * (already-created) projects do not bleed into each other. The special
+ * `__none__` bucket collects messages authored before any project exists
+ * (pre-create-project turns).
+ *
+ * YAGNI: multiple concurrent pre-project threads still collapse into the
+ * `__none__` bucket. In practice the user only has one "new project"
+ * conversation at a time, so differentiating them further is not worth
+ * the complexity.
  */
-let pendingMessages: StoredMessage[] = [];
+const NONE_BUCKET = '__none__' as const;
+const pendingMessages = new Map<string | typeof NONE_BUCKET, StoredMessage[]>();
+
+function getPendingBucket(key: string | typeof NONE_BUCKET): StoredMessage[] {
+  let bucket = pendingMessages.get(key);
+  if (!bucket) {
+    bucket = [];
+    pendingMessages.set(key, bucket);
+  }
+  return bucket;
+}
 
 export interface ImageData {
   name: string;
@@ -47,13 +65,18 @@ function toModelMsgs(stored: StoredMessage[]): ModelMessage[] {
 
 /**
  * Flush pending messages to a project's conversations.jsonl.
- * Called when a project becomes active mid-turn.
+ * Called when a project becomes active mid-turn. Drains both the
+ * project-specific bucket (if any) and the pre-project `__none__` bucket.
  */
 function flushPendingMessages(projectPath: string): void {
-  for (const msg of pendingMessages) {
-    appendMessage(projectPath, msg);
+  for (const bucketKey of [NONE_BUCKET, projectPath]) {
+    const bucket = pendingMessages.get(bucketKey);
+    if (!bucket) continue;
+    for (const msg of bucket) {
+      appendMessage(projectPath, msg);
+    }
+    pendingMessages.delete(bucketKey);
   }
-  pendingMessages = [];
 }
 
 export function registerAgentHandlers() {
@@ -70,11 +93,21 @@ export function registerAgentHandlers() {
       console.log('[GD Agent] Received message:', message.slice(0, 80));
       console.log('[GD Agent] Active project:', projectPath || '(none)');
 
-      // Load history (persisted + any in-memory pending messages)
-      const persisted = projectPath ? readMessages(projectPath) : [];
-      const history = [...persisted, ...pendingMessages];
+      // Bucket key for the pending buffer — per-project if available,
+      // otherwise the shared `__none__` bucket.
+      const bucketKey: string | typeof NONE_BUCKET = projectPath ?? NONE_BUCKET;
+      const pendingForThisThread = getPendingBucket(bucketKey);
 
-      console.log('[GD Agent] History: %d persisted + %d pending messages', persisted.length, pendingMessages.length);
+      // Load history (persisted + any in-memory pending messages from this bucket)
+      const persisted = projectPath ? readMessages(projectPath) : [];
+      const history = [...persisted, ...pendingForThisThread];
+
+      console.log(
+        '[GD Agent] History: %d persisted + %d pending (bucket=%s)',
+        persisted.length,
+        pendingForThisThread.length,
+        bucketKey,
+      );
 
       // Create user message
       const userMsg: StoredMessage = {
@@ -88,8 +121,8 @@ export function registerAgentHandlers() {
       if (projectPath) {
         appendMessage(projectPath, userMsg);
       } else {
-        // No project yet — buffer in memory
-        pendingMessages.push(userMsg);
+        // No project yet — buffer in the `__none__` bucket
+        pendingForThisThread.push(userMsg);
       }
 
       // Build message array for the LLM
@@ -126,8 +159,8 @@ export function registerAgentHandlers() {
         if (projectPath) {
           appendMessage(projectPath, assistantMsg);
         } else {
-          // Still no project — keep buffering
-          pendingMessages.push(assistantMsg);
+          // Still no project — keep buffering in the pre-project bucket.
+          getPendingBucket(NONE_BUCKET).push(assistantMsg);
         }
 
         // Check if update_gdd was called during this turn
@@ -137,7 +170,13 @@ export function registerAgentHandlers() {
       } catch (err: any) {
         const errorMsg = err?.message || String(err);
         console.error('[GD Agent] Error:', errorMsg);
-        win.webContents.send('agent:stream', { type: 'error', error: errorMsg });
+        // Annotate with projectPath (possibly null) so the renderer can decide
+        // whether the error belongs to the current view.
+        win.webContents.send('agent:stream', {
+          type: 'error',
+          error: errorMsg,
+          projectPath: projectPath ?? null,
+        });
         return { error: errorMsg };
       }
     },
@@ -147,9 +186,20 @@ export function registerAgentHandlers() {
     return readMessages(projectPath);
   });
 
-  /** Clear pending buffer (e.g. when user navigates back to home) */
-  ipcMain.handle('agent:clear-pending', async () => {
-    pendingMessages = [];
-    return { success: true };
-  });
+  /**
+   * Clear pending buffers. By default drains only the pre-project
+   * `__none__` bucket (back-compat with the legacy "navigate home" flow).
+   * Pass `projectPath` to drain a specific project's bucket instead.
+   */
+  ipcMain.handle(
+    'agent:clear-pending',
+    async (_event, payload: { projectPath?: string } | undefined) => {
+      if (payload?.projectPath) {
+        pendingMessages.delete(payload.projectPath);
+      } else {
+        pendingMessages.delete(NONE_BUCKET);
+      }
+      return { success: true };
+    },
+  );
 }
