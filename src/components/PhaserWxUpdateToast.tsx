@@ -113,7 +113,7 @@ export function PhaserWxUpdateToast() {
         <div className="flex-1 min-w-0">
           <div className="text-sm font-medium">{title}</div>
           {detail && (
-            <div className="text-xs mt-1 opacity-80 break-words">{detail}</div>
+            <div className="text-xs mt-1 opacity-80 wrap-break-word">{detail}</div>
           )}
           {failed && (
             <div className="text-[11px] mt-1 opacity-70">
