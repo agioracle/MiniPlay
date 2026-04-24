@@ -5,6 +5,7 @@ import { SetupWizard } from '@/components/setup/SetupWizard'
 import { EnvCheckScreen } from '@/components/EnvCheckScreen'
 import { WaveDotsBackground } from '@/components/WaveDotsBackground'
 import { TopBar } from '@/components/TopBar'
+import { PhaserWxUpdateToast } from '@/components/PhaserWxUpdateToast'
 import { ChatPanel } from '@/components/ChatPanel'
 import { RightPanel, type RightPanelHandle } from '@/components/RightPanel'
 import { ProjectCard } from '@/components/ProjectCard'
@@ -264,6 +265,7 @@ export default function Home() {
     return (
       <div className="relative flex flex-col h-screen bg-slate-50">
         <WaveDotsBackground />
+        <PhaserWxUpdateToast />
         <header
           className="relative z-10 flex items-center justify-between h-12 px-4 border-b border-slate-200 bg-white/60 backdrop-blur-sm"
           style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
@@ -374,6 +376,7 @@ export default function Home() {
   // Workspace view
   return (
     <div className="flex flex-col h-screen">
+      <PhaserWxUpdateToast />
       <TopBar onBack={handleBackToHome} />
       <main className="flex flex-1 min-h-0">
         <div className="w-[40%] border-r border-slate-200 flex flex-col bg-[#F8F8F7]">

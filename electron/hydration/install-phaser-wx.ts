@@ -5,12 +5,14 @@ import { TOOLCHAIN_DIR, ensureDir } from '../storage/paths';
 import { getManagedNodeBinDir } from './install-node';
 
 // PRD §7.2 specifies this exact URL
-const REPO_URL = 'https://github.com/agioracle/phaserjs-webgl-transform.git';
+export const PHASER_WX_REPO_URL = 'https://github.com/agioracle/phaserjs-webgl-transform.git';
+export const PHASER_WX_REPO_DIR = path.join(TOOLCHAIN_DIR, 'phaserjs-webgl-transform');
+export const PHASER_WX_CLI_DIR = path.join(PHASER_WX_REPO_DIR, 'packages', 'cli');
 
 /**
  * Detect if pnpm is available. If not, install it via npm.
  */
-function ensurePnpm(): void {
+export function ensurePnpm(): void {
   try {
     execSync('pnpm --version', { stdio: 'pipe', timeout: 10000 });
   } catch {
@@ -33,7 +35,7 @@ function ensurePnpm(): void {
  * 1. Try managed node bin dir (~/Library/Application Support/MiniPlay/node/bin/)
  * 2. Fallback to ~/.miniplay/bin/
  */
-function linkPhaserWxBin(cliDir: string): void {
+export function linkPhaserWxBin(cliDir: string): void {
   const cliPkg = JSON.parse(fs.readFileSync(path.join(cliDir, 'package.json'), 'utf-8'));
   const binEntries = cliPkg.bin || {};
 
@@ -61,6 +63,39 @@ function linkPhaserWxBin(cliDir: string): void {
 }
 
 /**
+ * Build (install deps + compile) the already-cloned phaser-wx repo, then link
+ * the CLI binary. Shared by `installPhaserWx` (first-time setup) and
+ * `checkAndUpdatePhaserWx` (startup update).
+ */
+export function buildAndLinkPhaserWx(
+  repoDir: string,
+  onProgress?: (detail: string) => void,
+): void {
+  // Install dependencies via pnpm
+  onProgress?.('Installing dependencies (pnpm install)...');
+  execSync('pnpm install --frozen-lockfile', {
+    cwd: repoDir,
+    timeout: 120000,
+    stdio: 'pipe',
+    env: { ...process.env },
+  });
+
+  // Build all packages
+  onProgress?.('Building toolchain (pnpm build)...');
+  execSync('pnpm run build', {
+    cwd: repoDir,
+    timeout: 60000,
+    stdio: 'pipe',
+    env: { ...process.env },
+  });
+
+  // Link CLI binary into managed bin dir (no sudo required)
+  onProgress?.('Linking phaser-wx CLI...');
+  const cliDir = path.join(repoDir, 'packages', 'cli');
+  linkPhaserWxBin(cliDir);
+}
+
+/**
  * Clone and build the phaserjs-webgl-transform toolchain.
  * Links phaser-wx CLI into the managed bin dir so it's available on PATH.
  *
@@ -69,7 +104,7 @@ function linkPhaserWxBin(cliDir: string): void {
  */
 export async function installPhaserWx(onProgress?: (detail: string) => void): Promise<string> {
   ensureDir(TOOLCHAIN_DIR);
-  const repoDir = path.join(TOOLCHAIN_DIR, 'phaserjs-webgl-transform');
+  const repoDir = PHASER_WX_REPO_DIR;
 
   // Step 1: Ensure pnpm is available
   onProgress?.('Checking pnpm...');
@@ -78,7 +113,7 @@ export async function installPhaserWx(onProgress?: (detail: string) => void): Pr
   // Step 2: Clone or pull
   if (!fs.existsSync(path.join(repoDir, '.git'))) {
     onProgress?.('Cloning phaserjs-webgl-transform...');
-    execSync(`git clone --depth 1 "${REPO_URL}" "${repoDir}"`, {
+    execSync(`git clone --depth 1 "${PHASER_WX_REPO_URL}" "${repoDir}"`, {
       timeout: 120000,
       stdio: 'pipe',
     });
@@ -95,28 +130,8 @@ export async function installPhaserWx(onProgress?: (detail: string) => void): Pr
     }
   }
 
-  // Step 3: Install dependencies via pnpm
-  onProgress?.('Installing dependencies (pnpm install)...');
-  execSync('pnpm install --frozen-lockfile', {
-    cwd: repoDir,
-    timeout: 120000,
-    stdio: 'pipe',
-    env: { ...process.env },
-  });
-
-  // Step 4: Build all packages
-  onProgress?.('Building toolchain (pnpm build)...');
-  execSync('pnpm run build', {
-    cwd: repoDir,
-    timeout: 60000,
-    stdio: 'pipe',
-    env: { ...process.env },
-  });
-
-  // Step 5: Link CLI binary into managed bin dir (no sudo required)
-  onProgress?.('Linking phaser-wx CLI...');
-  const cliDir = path.join(repoDir, 'packages', 'cli');
-  linkPhaserWxBin(cliDir);
+  // Steps 3-5: install deps, build, link CLI
+  buildAndLinkPhaserWx(repoDir, onProgress);
 
   // Verify the CLI is accessible
   try {
@@ -128,7 +143,7 @@ export async function installPhaserWx(onProgress?: (detail: string) => void): Pr
     onProgress?.(`phaser-wx ${version} ready`);
   } catch {
     // Verify via direct file existence
-    const cliDist = path.join(cliDir, 'dist', 'index.cjs');
+    const cliDist = path.join(PHASER_WX_CLI_DIR, 'dist', 'index.cjs');
     if (fs.existsSync(cliDist)) {
       onProgress?.('phaser-wx built (linked)');
     } else {

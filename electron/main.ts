@@ -14,8 +14,9 @@ import { registerAssetsHandlers } from './ipc/assets';
 import { ensureMiniPlayHome } from './storage/paths';
 import { teardownPreview } from './process/preview-bridge';
 import { coderSessionManager } from './coder/session-manager';
-import { initHydrationPath } from './hydration/index';
+import { initHydrationPath, isHydrationComplete } from './hydration/index';
 import { runEnvDetection } from './hydration/env-cache';
+import { checkAndUpdatePhaserWx, type UpdateProgress } from './hydration/update-phaser-wx';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -91,7 +92,59 @@ registerGitHandlers();
 registerExportHandlers();
 registerAssetsHandlers();
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  createWindow();
+  // Kick off a non-blocking background update check for the phaser-wx
+  // toolchain. First launch (no local checkout) and offline mode are both
+  // silently skipped; any failure rolls back to the previous version.
+  scheduleToolchainUpdateCheck();
+});
+
+/**
+ * Background-check GitHub for updates to the phaser-wx toolchain.
+ *
+ * - Skipped on first launch (no local clone yet — setup wizard handles it).
+ * - Skipped when offline / GitHub unreachable.
+ * - On success: refreshes the env-detection cache and notifies the renderer.
+ * - On failure: rolls back to the previous commit; the app keeps running
+ *   against the cached toolchain that was detected at startup.
+ */
+function scheduleToolchainUpdateCheck(): void {
+  // Nothing to update until first-launch hydration has produced a checkout.
+  if (!isHydrationComplete()) return;
+
+  // Delay briefly so the renderer can attach its listener and the splash
+  // screen isn't competing with a git/pnpm burst.
+  setTimeout(() => {
+    const broadcast = (progress: UpdateProgress) => {
+      for (const win of BrowserWindow.getAllWindows()) {
+        try {
+          win.webContents.send('phaser-wx:update-progress', progress);
+        } catch {
+          /* window destroyed */
+        }
+      }
+      console.log(
+        '[phaser-wx-update] %s%s',
+        progress.status,
+        progress.detail ? ` — ${progress.detail}` : '',
+      );
+    };
+
+    checkAndUpdatePhaserWx(broadcast)
+      .then((status) => {
+        if (status === 'updated') {
+          // Refresh the cached env-status so `env:status` IPC returns the
+          // new version string going forward.
+          try { runEnvDetection(); } catch { /* non-fatal */ }
+        }
+      })
+      .catch((err) => {
+        // checkAndUpdatePhaserWx already swallows errors, but guard anyway.
+        console.warn('[phaser-wx-update] Unexpected error:', err?.message || err);
+      });
+  }, 1500);
+}
 
 app.on('window-all-closed', () => {
   teardownPreview();

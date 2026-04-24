@@ -10,6 +10,25 @@ export interface HydrationStep {
 
 export type CoderAgentId = 'opencode' | 'claude-code' | 'codex' | 'gemini-cli';
 
+export type PhaserWxUpdateStatus =
+  | 'skipped-no-repo'
+  | 'skipped-no-network'
+  | 'skipped-no-git'
+  | 'skipped-dirty'
+  | 'up-to-date'
+  | 'updating'
+  | 'updated'
+  | 'failed-rollback'
+  | 'failed';
+
+export interface PhaserWxUpdateProgress {
+  status: PhaserWxUpdateStatus;
+  detail?: string;
+  localHead?: string;
+  remoteHead?: string;
+  error?: string;
+}
+
 export interface AppConfig {
   apiEndpoint: string;
   apiKey: string;
@@ -109,6 +128,9 @@ export interface MiniPlayAPI {
   onHydrationProgress: (callback: (steps: HydrationStep[]) => void) => () => void;
   envStatus: () => Promise<{ node: any; phaserWx: any; coderAgents: CoderDetectResult[]; detectedAt: string }>;
 
+  /** Subscribe to phaser-wx toolchain background update progress (emitted at startup). */
+  onPhaserWxUpdateProgress: (callback: (progress: PhaserWxUpdateProgress) => void) => () => void;
+
   // Config
   configGet: () => Promise<AppConfig>;
   configSet: (partial: Partial<AppConfig>) => Promise<AppConfig>;
@@ -193,6 +215,13 @@ const api: MiniPlayAPI = {
     return () => ipcRenderer.removeListener('hydration:progress', handler);
   },
   envStatus: () => ipcRenderer.invoke('env:status'),
+
+  onPhaserWxUpdateProgress: (callback: (progress: PhaserWxUpdateProgress) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, progress: PhaserWxUpdateProgress) =>
+      callback(progress);
+    ipcRenderer.on('phaser-wx:update-progress', handler);
+    return () => ipcRenderer.removeListener('phaser-wx:update-progress', handler);
+  },
 
   configGet: () => ipcRenderer.invoke('config:get'),
   configSet: (partial: Partial<AppConfig>) => ipcRenderer.invoke('config:set', partial),
