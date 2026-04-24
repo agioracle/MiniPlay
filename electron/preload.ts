@@ -14,6 +14,7 @@ export type PhaserWxUpdateStatus =
   | 'skipped-no-repo'
   | 'skipped-no-network'
   | 'skipped-no-git'
+  | 'skipped-no-tags'
   | 'skipped-dirty'
   | 'up-to-date'
   | 'updating'
@@ -24,8 +25,10 @@ export type PhaserWxUpdateStatus =
 export interface PhaserWxUpdateProgress {
   status: PhaserWxUpdateStatus;
   detail?: string;
-  localHead?: string;
-  remoteHead?: string;
+  /** Currently-checked-out release tag (e.g. "v1.0.0"); null when HEAD isn't on a tag. */
+  localTag?: string | null;
+  /** Highest release tag found on the remote. */
+  remoteTag?: string | null;
   error?: string;
 }
 

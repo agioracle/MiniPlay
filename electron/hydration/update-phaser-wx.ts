@@ -12,6 +12,7 @@ export type UpdateStatus =
   | 'skipped-no-repo'
   | 'skipped-no-network'
   | 'skipped-no-git'
+  | 'skipped-no-tags'
   | 'skipped-dirty'
   | 'up-to-date'
   | 'updating'
@@ -22,8 +23,10 @@ export type UpdateStatus =
 export interface UpdateProgress {
   status: UpdateStatus;
   detail?: string;
-  localHead?: string;
-  remoteHead?: string;
+  /** Currently-checked-out release tag, e.g. "v1.0.0". `null` when HEAD isn't on a tag. */
+  localTag?: string | null;
+  /** Highest release tag found on the remote. */
+  remoteTag?: string | null;
   error?: string;
 }
 
@@ -39,18 +42,120 @@ function run(cmd: string, cwd?: string, timeout = 30000): string {
   }).trim();
 }
 
+/** Parse a SemVer-ish tag like `v1.2.3`, `1.2.3`, `v1.2.3-beta.1`. Returns null if unparseable. */
+interface ParsedVersion {
+  major: number;
+  minor: number;
+  patch: number;
+  pre: string | null; // pre-release suffix (without leading `-`), or null for a stable release
+  raw: string;
+}
+
+function parseVersion(tag: string): ParsedVersion | null {
+  // Strip a leading `v` / `V`.
+  const s = tag.replace(/^[vV]/, '');
+  // Match `MAJOR.MINOR.PATCH` with an optional `-prerelease` / `+build` suffix.
+  const m = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/.exec(s);
+  if (!m) return null;
+  return {
+    major: Number(m[1]),
+    minor: Number(m[2]),
+    patch: Number(m[3]),
+    pre: m[4] ?? null,
+    raw: tag,
+  };
+}
+
 /**
- * Read the remote HEAD commit hash for the default branch.
- * Returns null if the network/git call fails (offline, DNS, etc.).
+ * SemVer comparison: positive if `a > b`, negative if `a < b`, 0 if equal.
+ * Stable releases (no pre-release) rank higher than any pre-release of the
+ * same MAJOR.MINOR.PATCH (per SemVer 2.0.0 §11).
  */
-function getRemoteHead(repoDir: string): string | null {
+function compareVersions(a: ParsedVersion, b: ParsedVersion): number {
+  if (a.major !== b.major) return a.major - b.major;
+  if (a.minor !== b.minor) return a.minor - b.minor;
+  if (a.patch !== b.patch) return a.patch - b.patch;
+  // Same numeric version → stable > any pre-release.
+  if (a.pre === null && b.pre === null) return 0;
+  if (a.pre === null) return 1;
+  if (b.pre === null) return -1;
+  // Both have pre-release identifiers — compare dot-separated ids per SemVer.
+  const aIds = a.pre.split('.');
+  const bIds = b.pre.split('.');
+  const len = Math.max(aIds.length, bIds.length);
+  for (let i = 0; i < len; i++) {
+    const av = aIds[i];
+    const bv = bIds[i];
+    if (av === undefined) return -1; // shorter identifier list ranks lower
+    if (bv === undefined) return 1;
+    const aNum = /^\d+$/.test(av);
+    const bNum = /^\d+$/.test(bv);
+    if (aNum && bNum) {
+      const d = Number(av) - Number(bv);
+      if (d !== 0) return d;
+    } else if (aNum) {
+      return -1; // numeric < alphanumeric
+    } else if (bNum) {
+      return 1;
+    } else {
+      if (av < bv) return -1;
+      if (av > bv) return 1;
+    }
+  }
+  return 0;
+}
+
+/**
+ * Read the list of release tags from the remote.
+ * Returns null when the network call fails (offline, DNS, etc.) so callers
+ * can distinguish "offline" from "no tags published yet".
+ */
+function listRemoteTags(repoDir: string): Array<{ tag: string; sha: string }> | null {
   try {
-    // `ls-remote` honours git's own proxy/https config and works for shallow clones.
-    const out = run('git ls-remote origin HEAD', repoDir, 15000);
-    // Format: "<sha>\tHEAD"
-    const firstLine = out.split('\n')[0] || '';
-    const sha = firstLine.split(/\s+/)[0];
-    return /^[0-9a-f]{40}$/i.test(sha) ? sha : null;
+    // `--refs` strips the `^{}` peeled lines, so each line is "<sha>\trefs/tags/<tag>"
+    const out = run('git ls-remote --tags --refs origin', repoDir, 15000);
+    if (!out) return [];
+    return out
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const [sha, ref] = line.split(/\s+/);
+        const tag = ref?.replace(/^refs\/tags\//, '') ?? '';
+        return { tag, sha };
+      })
+      .filter((e) => /^[0-9a-f]{40}$/i.test(e.sha) && e.tag.length > 0);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Determine which remote tag (if any) is the current "latest" release.
+ * Selects the highest parseable semver among the remote tags and ignores any
+ * tag whose format we don't understand.
+ */
+function pickLatestTag(tags: Array<{ tag: string; sha: string }>): { tag: string; sha: string; parsed: ParsedVersion } | null {
+  let best: { tag: string; sha: string; parsed: ParsedVersion } | null = null;
+  for (const entry of tags) {
+    const parsed = parseVersion(entry.tag);
+    if (!parsed) continue;
+    if (!best || compareVersions(parsed, best.parsed) > 0) {
+      best = { tag: entry.tag, sha: entry.sha, parsed };
+    }
+  }
+  return best;
+}
+
+/**
+ * Find the tag currently pointed at by HEAD, if any.
+ * Uses `git describe --tags --exact-match HEAD` so we only consider tags, not
+ * annotated branch heads. Returns null when HEAD isn't on a tag.
+ */
+function getLocalTag(repoDir: string): string | null {
+  try {
+    const tag = run('git describe --tags --exact-match HEAD', repoDir, 5000);
+    return tag || null;
   } catch {
     return null;
   }
@@ -65,77 +170,46 @@ function getLocalHead(repoDir: string): string | null {
   }
 }
 
-/**
- * Is the working tree dirty (uncommitted / untracked changes)?
- * If the user somehow modified the toolchain checkout, we must not clobber it.
- */
 function isWorkingTreeDirty(repoDir: string): boolean {
   try {
     const out = run('git status --porcelain', repoDir, 5000);
     return out.length > 0;
   } catch {
-    // If `git status` itself fails, treat as dirty to stay safe.
     return true;
   }
 }
 
-function detectDefaultBranch(repoDir: string): string {
-  // Try the symbolic ref from origin first (most reliable).
-  try {
-    const out = run('git symbolic-ref --short refs/remotes/origin/HEAD', repoDir, 5000);
-    // "origin/main" → "main"
-    const branch = out.replace(/^origin\//, '').trim();
-    if (branch) return branch;
-  } catch {
-    // Fall through to heuristics
-  }
-  // Fallback: try current branch
-  try {
-    const cur = run('git rev-parse --abbrev-ref HEAD', repoDir, 5000);
-    if (cur && cur !== 'HEAD') return cur;
-  } catch {
-    // Fall through
-  }
-  return 'main';
-}
-
 /**
- * Fetch the latest commits and fast-forward the local checkout.
- * Works for both shallow (depth=1) and full clones — for shallow clones we
- * fetch with --depth 1 and reset hard to the remote head.
+ * Fetch the specific tag from origin (shallow-clone compatible) and check it
+ * out as a detached HEAD. Using `reset --hard FETCH_HEAD` keeps behaviour
+ * consistent for both shallow and full clones.
  */
-function fastForwardToRemote(repoDir: string, remoteSha: string): void {
-  const branch = detectDefaultBranch(repoDir);
-
-  // Fetch the target branch with shallow depth (safe for both shallow & full clones).
-  run(`git fetch --depth 1 origin ${branch}`, repoDir, 60000);
-
-  // Hard-reset onto the fetched commit. We use FETCH_HEAD rather than remoteSha
-  // to guarantee the ref is locally known (especially for shallow fetches).
-  run('git reset --hard FETCH_HEAD', repoDir, 15000);
-
-  // Sanity-check we ended up where we expected.
-  const newLocal = getLocalHead(repoDir);
-  if (newLocal !== remoteSha) {
-    // Not fatal — the default branch may have moved again between ls-remote and
-    // fetch. Either way we're on a newer commit, so continue.
-    console.warn(
-      '[phaser-wx-update] post-reset HEAD (%s) != remoteSha (%s) — continuing',
-      newLocal?.slice(0, 7),
-      remoteSha.slice(0, 7),
-    );
-  }
+function checkoutRemoteTag(repoDir: string, tag: string): void {
+  // Fetch only the tag ref we care about, with depth 1 for efficiency.
+  run(`git fetch --depth 1 origin "refs/tags/${tag}:refs/tags/${tag}"`, repoDir, 60000);
+  // Detach HEAD onto the fetched tag. `-c advice.detachedHead=false` keeps
+  // stderr quiet in the non-TTY case (execSync captures it anyway, but avoids
+  // noisy warnings reaching the user if we ever surface raw output).
+  run(`git -c advice.detachedHead=false checkout --force "refs/tags/${tag}"`, repoDir, 15000);
 }
 
 /**
- * Check GitHub for updates to the phaser-wx toolchain and, if any are
- * available, pull + rebuild. On any failure the local checkout is rolled
- * back so the app continues to use the previously-working version.
+ * Check the phaser-wx GitHub repo for a newer release tag and, if one exists,
+ * check it out and rebuild the toolchain. On any failure the local checkout
+ * is rolled back to the previous commit so the app keeps using the
+ * previously-working version.
  *
- * This function is designed to be called at app startup (non-blocking).
- * It will never throw; errors are reported through the progress callback.
+ * Update semantics (tag-based):
+ *   - Only tags that parse as SemVer are considered.
+ *   - The highest remote tag wins. Stable releases rank above pre-releases of
+ *     the same MAJOR.MINOR.PATCH.
+ *   - The app updates when the highest remote tag is strictly greater than
+ *     the locally-checked-out tag (or when the local checkout isn't on any
+ *     tag at all — e.g. a user still on a `main` branch from an older
+ *     install).
  *
- * @returns the final status of the update attempt
+ * This function never throws; errors are reported through the progress
+ * callback and the return value.
  */
 export async function checkAndUpdatePhaserWx(
   onProgress?: (progress: UpdateProgress) => void,
@@ -158,68 +232,99 @@ export async function checkAndUpdatePhaserWx(
     return 'skipped-no-git';
   }
 
-  // 3. Ask GitHub for the remote HEAD. Network failure → silently skip.
-  emit({ status: 'updating', detail: 'Checking GitHub for updates...', localHead });
-  const remoteHead = getRemoteHead(repoDir);
-  if (!remoteHead) {
+  const localTag = getLocalTag(repoDir);
+  const localParsed = localTag ? parseVersion(localTag) : null;
+
+  // 3. Ask GitHub for the tag list. Network failure → silently skip.
+  emit({
+    status: 'updating',
+    detail: 'Checking GitHub for new phaser-wx releases...',
+    localTag,
+  });
+  const remoteTags = listRemoteTags(repoDir);
+  if (remoteTags === null) {
     emit({
       status: 'skipped-no-network',
       detail: 'Unable to reach GitHub (offline?) — using cached toolchain',
-      localHead,
+      localTag,
     });
     return 'skipped-no-network';
   }
 
-  // 4. Already up-to-date.
-  if (remoteHead === localHead) {
-    emit({ status: 'up-to-date', detail: 'phaser-wx toolchain is up-to-date', localHead, remoteHead });
+  // 4. No release tags on the remote at all → nothing to pull.
+  const latest = pickLatestTag(remoteTags);
+  if (!latest) {
+    emit({
+      status: 'skipped-no-tags',
+      detail: 'Upstream has no semver-tagged releases — using cached toolchain',
+      localTag,
+    });
+    return 'skipped-no-tags';
+  }
+
+  // 5. Decide whether we need to move. We need to upgrade if:
+  //    - local isn't on any parseable tag (older installs on `main`), OR
+  //    - remote tag is strictly greater than local tag.
+  const shouldUpdate =
+    !localParsed || compareVersions(latest.parsed, localParsed) > 0;
+
+  if (!shouldUpdate) {
+    emit({
+      status: 'up-to-date',
+      detail: `phaser-wx is up-to-date (${localTag})`,
+      localTag,
+      remoteTag: latest.tag,
+    });
     return 'up-to-date';
   }
 
-  // 5. Refuse to touch a dirty working tree (user edits must not be destroyed).
+  // 6. Refuse to touch a dirty working tree (user edits must not be destroyed).
   if (isWorkingTreeDirty(repoDir)) {
     emit({
       status: 'skipped-dirty',
       detail: 'Toolchain working tree has local changes — skipping update',
-      localHead,
-      remoteHead,
+      localTag,
+      remoteTag: latest.tag,
     });
     return 'skipped-dirty';
   }
 
-  // 6. Remember the current HEAD for rollback.
+  // 7. Remember the current commit for rollback.
   const rollbackSha = localHead;
   const cliDistExisted = fs.existsSync(CLI_DIST);
 
   emit({
     status: 'updating',
-    detail: `Update available (${localHead.slice(0, 7)} → ${remoteHead.slice(0, 7)}), pulling...`,
-    localHead,
-    remoteHead,
+    detail: localParsed
+      ? `Update available (${localTag} → ${latest.tag}), pulling release...`
+      : `Switching to latest release ${latest.tag}...`,
+    localTag,
+    remoteTag: latest.tag,
   });
 
   try {
-    // 7. pnpm is a build-time dependency — make sure it's still available.
+    // 8. pnpm is a build-time dependency — make sure it's still available.
     ensurePnpm();
 
-    // 8. Fetch + reset.
-    fastForwardToRemote(repoDir, remoteHead);
+    // 9. Fetch the tag and check it out (detached HEAD is fine — the
+    //    toolchain is not a user-edited workspace).
+    checkoutRemoteTag(repoDir, latest.tag);
 
-    // 9. Rebuild + re-link the CLI.
+    // 10. Rebuild + re-link the CLI.
     buildAndLinkPhaserWx(repoDir, (detail) => {
-      emit({ status: 'updating', detail, localHead, remoteHead });
+      emit({ status: 'updating', detail, localTag, remoteTag: latest.tag });
     });
 
-    // 10. Confirm the CLI dist is still there (sanity check).
+    // 11. Confirm the CLI dist is still there.
     if (!fs.existsSync(CLI_DIST)) {
       throw new Error('phaser-wx CLI build output missing after update');
     }
 
     emit({
       status: 'updated',
-      detail: `phaser-wx updated to ${remoteHead.slice(0, 7)}`,
-      localHead: remoteHead,
-      remoteHead,
+      detail: `phaser-wx updated to ${latest.tag}`,
+      localTag: latest.tag,
+      remoteTag: latest.tag,
     });
     return 'updated';
   } catch (err: any) {
@@ -230,9 +335,9 @@ export async function checkAndUpdatePhaserWx(
     try {
       run(`git reset --hard ${rollbackSha}`, repoDir, 15000);
 
-      // If the rebuild completed enough to break the CLI dist, try to restore it
-      // by rebuilding the original commit. Only attempt this if the CLI was
-      // present before — otherwise there's nothing to restore to.
+      // If the rebuild broke the CLI dist, try to restore it by rebuilding
+      // the original commit. Only attempt this if the CLI was present
+      // before — otherwise there's nothing to restore to.
       if (cliDistExisted && !fs.existsSync(CLI_DIST)) {
         try {
           buildAndLinkPhaserWx(repoDir);
@@ -247,8 +352,8 @@ export async function checkAndUpdatePhaserWx(
       emit({
         status: 'failed-rollback',
         detail: 'Update failed — rolled back to previous version',
-        localHead: rollbackSha,
-        remoteHead,
+        localTag,
+        remoteTag: latest.tag,
         error: errorMsg,
       });
       return 'failed-rollback';
@@ -258,8 +363,8 @@ export async function checkAndUpdatePhaserWx(
       emit({
         status: 'failed',
         detail: 'Update failed and rollback errored — continuing with whatever is on disk',
-        localHead: rollbackSha,
-        remoteHead,
+        localTag,
+        remoteTag: latest.tag,
         error: `${errorMsg} | rollback: ${rollbackErr?.message || String(rollbackErr)}`,
       });
       return 'failed';

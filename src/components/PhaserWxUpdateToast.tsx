@@ -6,6 +6,7 @@ type PhaserWxUpdateStatus =
   | 'skipped-no-repo'
   | 'skipped-no-network'
   | 'skipped-no-git'
+  | 'skipped-no-tags'
   | 'skipped-dirty'
   | 'up-to-date'
   | 'updating'
@@ -16,8 +17,8 @@ type PhaserWxUpdateStatus =
 interface PhaserWxUpdateProgress {
   status: PhaserWxUpdateStatus
   detail?: string
-  localHead?: string
-  remoteHead?: string
+  localTag?: string | null
+  remoteTag?: string | null
   error?: string
 }
 
@@ -44,7 +45,7 @@ export function PhaserWxUpdateToast() {
       // Never show the toast for silent no-ops — these are the common case
       // (already up-to-date, or the user is offline). Only surface when an
       // actual update is happening or has finished.
-      if (p.status === 'up-to-date' || p.status === 'skipped-no-repo' || p.status === 'skipped-no-network' || p.status === 'skipped-no-git') {
+      if (p.status === 'up-to-date' || p.status === 'skipped-no-repo' || p.status === 'skipped-no-network' || p.status === 'skipped-no-git' || p.status === 'skipped-no-tags') {
         return
       }
 
