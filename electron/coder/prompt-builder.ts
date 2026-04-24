@@ -30,11 +30,13 @@ Pay special attention to the "## Latest Patch" section — it contains the most 
 5. Keep subpackages design intact
 6. Keep file structure intact
 7. Keep BootScene → MenuScene → GameScene → GameOverScene flow
-8. Keep code clean and well-commented
-9. Use Phaser 3 API (this.add, this.physics, this.load, etc.)
-10. Use safe area for all UI elements
-11. Use "assets" or "remote-assets" as assets relative path prefix
-12. After modifying code, ALWAYS update the "## Latest Patch" section in ${gddPath} with a timestamped summary of what you changed and which files were affected
+8. Keep UI and game visual style consistent
+9. Keep code clean and well-commented
+10. Use Phaser 3 API (this.add, this.physics, this.load, etc.)
+11. Use safe area for all UI elements
+12. Use "assets" or "remote-assets" as assets relative path prefix
+13. Use existing or create new UI components in 'ui-components.js'
+14. After modifying code, ALWAYS update the "## Latest Patch" section in ${gddPath} with a timestamped summary of what you changed and which files were affected, appending to the existing content.
 
 ## After making changes
 Summarize what files you changed and what you did.`;

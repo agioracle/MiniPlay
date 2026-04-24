@@ -30,7 +30,7 @@ export function ProjectCard({
         className="w-full text-left p-4 rounded-xl bg-white hover:bg-slate-50 transition-all card-shadow"
       >
         {/* Thumbnail placeholder */}
-        <div className="w-full aspect-[16/9] rounded-lg bg-slate-100 mb-3 flex items-center justify-center overflow-hidden">
+        <div className="w-full aspect-video rounded-lg bg-slate-100 mb-3 flex items-center justify-center overflow-hidden">
           <span className="text-2xl">🎮</span>
         </div>
 
